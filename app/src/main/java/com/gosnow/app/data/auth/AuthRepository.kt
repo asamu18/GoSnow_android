@@ -15,6 +15,16 @@ class AuthRepository(
         return session
     }
 
+    suspend fun sendSmsCode(phone: String) {
+        apiService.sendSmsCode(phone)
+    }
+
+    suspend fun loginWithSms(phone: String, code: String): AuthSession {
+        val session = apiService.loginWithSms(phone = phone, code = code)
+        preferences.saveSession(session)
+        return session
+    }
+
     suspend fun logout() {
         preferences.clearSession()
     }

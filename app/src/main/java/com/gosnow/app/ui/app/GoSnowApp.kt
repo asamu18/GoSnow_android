@@ -29,10 +29,12 @@ import com.gosnow.app.ui.feed.FeedScreen
 import com.gosnow.app.ui.home.HomeScreen
 import com.gosnow.app.ui.lostfound.LostAndFoundScreen
 import com.gosnow.app.ui.profile.ProfileScreen
-import com.gosnow.app.ui.login.LoginScreen
+import com.gosnow.app.ui.login.LoginLandingScreen
 import com.gosnow.app.ui.login.LoginViewModel
+import com.gosnow.app.ui.login.PhoneLoginScreen
 
-private const val LOGIN_ROUTE = "login"
+private const val LOGIN_LANDING_ROUTE = "login_landing"
+private const val PHONE_LOGIN_ROUTE = "phone_login"
 private const val MAIN_ROUTE = "main"
 const val PROFILE_ROUTE = "profile"
 const val LOST_AND_FOUND_ROUTE = "lost_and_found"
@@ -46,21 +48,29 @@ fun GoSnowApp() {
 
     NavHost(
         navController = authNavController,
-        startDestination = if (uiState.isLoggedIn) MAIN_ROUTE else LOGIN_ROUTE
+        startDestination = if (uiState.isLoggedIn) MAIN_ROUTE else LOGIN_LANDING_ROUTE
     ) {
-        composable(LOGIN_ROUTE) {
-            LoginScreen(
+        composable(LOGIN_LANDING_ROUTE) {
+            LoginLandingScreen(
+                isCheckingSession = uiState.isCheckingSession,
+                onStartPhoneLogin = { authNavController.navigate(PHONE_LOGIN_ROUTE) }
+            )
+        }
+        composable(PHONE_LOGIN_ROUTE) {
+            PhoneLoginScreen(
                 uiState = uiState,
-                onEmailChange = loginViewModel::onEmailChange,
-                onPasswordChange = loginViewModel::onPasswordChange,
-                onLoginClick = loginViewModel::login
+                onPhoneChange = loginViewModel::onPhoneChange,
+                onVerificationCodeChange = loginViewModel::onVerificationCodeChange,
+                onSendCode = loginViewModel::sendVerificationCode,
+                onLoginClick = loginViewModel::verifyCodeAndLogin,
+                onBackClick = { authNavController.popBackStack() }
             )
         }
         composable(MAIN_ROUTE) {
             GoSnowMainApp(
                 onLogout = {
                     loginViewModel.logout()
-                    authNavController.navigate(LOGIN_ROUTE) {
+                    authNavController.navigate(LOGIN_LANDING_ROUTE) {
                         popUpTo(MAIN_ROUTE) { inclusive = true }
                     }
                 }
@@ -71,7 +81,7 @@ fun GoSnowApp() {
     LaunchedEffect(uiState.isLoggedIn) {
         if (uiState.isLoggedIn) {
             authNavController.navigate(MAIN_ROUTE) {
-                popUpTo(LOGIN_ROUTE) { inclusive = true }
+                popUpTo(LOGIN_LANDING_ROUTE) { inclusive = true }
             }
         }
     }
