@@ -1,5 +1,6 @@
 package com.gosnow.app.ui.app
 
+import android.content.Context
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
@@ -14,6 +15,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -33,24 +37,48 @@ import com.gosnow.app.ui.login.TermsScreen
 import com.gosnow.app.ui.login.WelcomeAuthIntroScreen
 import com.gosnow.app.ui.lostfound.LostAndFoundScreen
 import com.gosnow.app.ui.profile.ProfileScreen
+import com.gosnow.app.ui.record.RecordRoute
+import com.gosnow.app.ui.welcome.WelcomeFlowScreen
 
 private const val WELCOME_AUTH_ROUTE = "welcome_auth"
 private const val PHONE_LOGIN_ROUTE = "phone_login"
 private const val TERMS_ROUTE = "terms"
 private const val MAIN_ROUTE = "main"
+
 const val PROFILE_ROUTE = "profile"
 const val LOST_AND_FOUND_ROUTE = "lost_and_found"
+const val RECORD_ROUTE = "record"
+const val WELCOME_FLOW_ROUTE = "welcome_flow"
 
 @Composable
 fun GoSnowApp() {
     val authNavController = rememberNavController()
     val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("gosnow_prefs", Context.MODE_PRIVATE) }
+    var hasSeenWelcome by remember { mutableStateOf(prefs.getBoolean("has_seen_welcome_v1", false)) }
+
     val loginViewModel: LoginViewModel = viewModel(factory = LoginViewModel.provideFactory(context))
     val uiState by loginViewModel.uiState.collectAsState()
 
+    LaunchedEffect(uiState.isLoggedIn, hasSeenWelcome) {
+        val targetRoute = when {
+            !uiState.isLoggedIn -> WELCOME_AUTH_ROUTE
+            !hasSeenWelcome -> WELCOME_FLOW_ROUTE
+            else -> MAIN_ROUTE
+        }
+
+        val currentRoute = authNavController.currentDestination?.route
+        if (currentRoute != targetRoute) {
+            authNavController.navigate(targetRoute) {
+                popUpTo(authNavController.graph.startDestinationId) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
+
     NavHost(
         navController = authNavController,
-        startDestination = if (uiState.isLoggedIn) MAIN_ROUTE else WELCOME_AUTH_ROUTE
+        startDestination = WELCOME_AUTH_ROUTE
     ) {
         composable(WELCOME_AUTH_ROUTE) {
             WelcomeAuthIntroScreen(
@@ -73,23 +101,29 @@ fun GoSnowApp() {
         composable(TERMS_ROUTE) {
             TermsScreen(onBackClick = { authNavController.popBackStack() })
         }
-        composable(MAIN_ROUTE) {
-            GoSnowMainApp(
-                onLogout = {
-                    loginViewModel.logout()
-                    authNavController.navigate(WELCOME_AUTH_ROUTE) {
-                        popUpTo(MAIN_ROUTE) { inclusive = true }
+        composable(WELCOME_FLOW_ROUTE) {
+            WelcomeFlowScreen(
+                onFinished = {
+                    hasSeenWelcome = true
+                    prefs.edit().putBoolean("has_seen_welcome_v1", true).apply()
+                    authNavController.navigate(MAIN_ROUTE) {
+                        popUpTo(authNavController.graph.startDestinationId) { inclusive = true }
+                        launchSingleTop = true
                     }
                 }
             )
         }
-    }
-
-    LaunchedEffect(uiState.isLoggedIn) {
-        if (uiState.isLoggedIn) {
-            authNavController.navigate(MAIN_ROUTE) {
-                popUpTo(WELCOME_AUTH_ROUTE) { inclusive = true }
-            }
+        composable(MAIN_ROUTE) {
+            GoSnowMainApp(
+                onLogout = {
+                    loginViewModel.logout()
+                    hasSeenWelcome = prefs.getBoolean("has_seen_welcome_v1", false)
+                    authNavController.navigate(WELCOME_AUTH_ROUTE) {
+                        popUpTo(authNavController.graph.startDestinationId) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            )
         }
     }
 }
@@ -106,35 +140,38 @@ fun GoSnowMainApp(
         BottomNavItem.Discover
     )
 
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentDestination = navBackStackEntry?.destination
+    val shouldShowBottomBar = currentDestination?.route != RECORD_ROUTE
+
     Scaffold(
         bottomBar = {
-            NavigationBar {
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentDestination = navBackStackEntry?.destination
-
-                items.forEach { item ->
-                    val selected = currentDestination.isRouteInHierarchy(item.route)
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = {
-                            if (!selected) {
-                                navController.navigate(item.route) {
-                                    popUpTo(navController.graph.startDestinationId) {
-                                        saveState = true
+            if (shouldShowBottomBar) {
+                NavigationBar {
+                    items.forEach { item ->
+                        val selected = currentDestination.isRouteInHierarchy(item.route)
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = {
+                                if (!selected) {
+                                    navController.navigate(item.route) {
+                                        popUpTo(navController.graph.startDestinationId) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
                                 }
-                            }
-                        },
-                        icon = {
-                            Icon(
-                                imageVector = item.icon,
-                                contentDescription = item.label
-                            )
-                        },
-                        label = { Text(text = item.label) }
-                    )
+                            },
+                            icon = {
+                                Icon(
+                                    imageVector = item.icon,
+                                    contentDescription = item.label
+                                )
+                            },
+                            label = { Text(text = item.label) }
+                        )
+                    }
                 }
             }
         }
@@ -147,13 +184,14 @@ fun GoSnowMainApp(
             composable(BottomNavItem.Home.route) {
                 HomeScreen(
                     onProfileClick = { navController.navigate(PROFILE_ROUTE) },
-                    onNavigateToDiscoverLost = { navController.navigate(LOST_AND_FOUND_ROUTE) }
+                    onNavigateToDiscoverLost = { navController.navigate(LOST_AND_FOUND_ROUTE) },
+                    onNavigateToRecord = { navController.navigate(RECORD_ROUTE) }
                 )
             }
             composable(BottomNavItem.Feed.route) {
                 FeedScreen(
                     onCreatePostClick = {
-                        // TODO: 接入雪圈发帖导航逻辑
+                        // TODO: 入雪圈发帖导航逻辑
                     }
                 )
             }
@@ -167,6 +205,7 @@ fun GoSnowMainApp(
             }
             composable(PROFILE_ROUTE) { ProfileScreen(onLogout = onLogout) }
             composable(LOST_AND_FOUND_ROUTE) { LostAndFoundScreen() }
+            composable(RECORD_ROUTE) { RecordRoute(onBack = { navController.popBackStack() }) }
         }
     }
 }

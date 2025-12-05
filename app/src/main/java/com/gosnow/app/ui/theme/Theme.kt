@@ -11,35 +11,32 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
-// 深色模式下的颜色（大致偏黑）
 private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFFF9FAFB),
-    onPrimary = Color(0xFF111827),
-    secondary = Color(0xFF9CA3AF),
-    onSecondary = Color(0xFF020617),
-    background = Color(0xFF020617),
-    onBackground = Color(0xFFE5E7EB),
-    surface = Color(0xFF020617),
-    onSurface = Color(0xFFE5E7EB)
+    primary = Color(0xFF111111),
+    onPrimary = Color.White,
+    secondary = Color(0xFF444444),
+    onSecondary = Color.White,
+    background = Color.Black,
+    onBackground = Color.White,
+    surface = Color(0xFF121212),
+    onSurface = Color.White
 )
 
-// 浅色模式：整体偏白
 private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF111827),
+    primary = Color(0xFF111111),
     onPrimary = Color.White,
-    secondary = Color(0xFF4B5563),
+    secondary = Color(0xFF4F4F4F),
     onSecondary = Color.White,
-    background = Color(0xFFF9FAFB),
-    onBackground = Color(0xFF111827),
-    surface = Color.White,
-    onSurface = Color(0xFF111827)
+    background = Color(0xFFFDFDFD),
+    onBackground = Color(0xFF0F172A),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF0F172A)
 )
 
 @Composable
 fun GosnowTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // 为了让默认是“白色系”，这里默认关闭动态配色
-    dynamicColor: Boolean = false,
+    dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
