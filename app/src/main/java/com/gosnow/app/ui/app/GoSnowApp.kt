@@ -136,7 +136,8 @@ fun GoSnowMainApp(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val currentRoute = currentDestination?.route
-    val shouldShowBottomBar = currentRoute != RECORD_ROUTE && currentRoute != BottomNavItem.Record.route
+    val shouldShowBottomBar = currentRoute != RECORD_ROUTE
+
 
     Scaffold(
         bottomBar = {
