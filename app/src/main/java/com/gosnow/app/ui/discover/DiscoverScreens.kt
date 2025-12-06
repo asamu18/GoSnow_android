@@ -68,6 +68,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
@@ -84,11 +85,13 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiscoverScreen(
     onLostAndFoundClick: () -> Unit,
     onCarpoolClick: () -> Unit,
-    onRoommateClick: () -> Unit
+    onRoommateClick: () -> Unit,
+
 ) {
     Scaffold(
         topBar = {
@@ -135,7 +138,7 @@ fun DiscoverScreen(
 fun DiscoverEntryCard(
     title: String,
     subtitle: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     color: Color,
     onClick: () -> Unit
 ) {
@@ -716,6 +719,7 @@ fun CarpoolPublishScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyCarpoolScreen(onBackClick: () -> Unit) {
     val myList = sampleCarpoolList
@@ -942,6 +946,7 @@ fun RoommatePublishScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyRoommateScreen(onBackClick: () -> Unit) {
     val myList = sampleRoommateList
@@ -1087,7 +1092,10 @@ private fun LocalDateTime.formatFull(): String = DateTimeFormatter.ofPattern("MM
 @Composable
 fun PreviewDiscoverScreen() {
     GosnowTheme {
-        DiscoverScreen(onLostAndFoundClick = {}, onCarpoolClick = {}, onRoommateClick = {})
+        DiscoverScreen(
+            onLostAndFoundClick = {}, onCarpoolClick = {},
+            onRoommateClick = TODO(),
+        )
     }
 }
 

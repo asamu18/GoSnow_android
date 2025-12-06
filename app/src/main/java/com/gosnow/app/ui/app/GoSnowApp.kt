@@ -194,11 +194,15 @@ fun GoSnowMainApp(
             composable(BottomNavItem.Discover.route) {
                 DiscoverScreen(
                     onLostAndFoundClick = { navController.navigate(LOST_AND_FOUND_ROUTE) },
-                    onFeatureClick = {
-                        // TODO: 根据 iOS 发现页入口补充导航
+                    onCarpoolClick = {
+                        // TODO: 导航到「顺风车」页面，例如 navController.navigate(CARPOOL_ROUTE)
+                    },
+                    onRoommateClick = {
+                        // TODO: 导航到「合租拼房」页面，例如 navController.navigate(ROOMMATE_ROUTE)
                     }
                 )
             }
+
             composable(PROFILE_ROUTE) { ProfileScreen(onLogout = onLogout) }
             composable(LOST_AND_FOUND_ROUTE) { LostAndFoundScreen() }
             composable(RECORD_ROUTE) { RecordRoute(onBack = { navController.popBackStack() }) }
