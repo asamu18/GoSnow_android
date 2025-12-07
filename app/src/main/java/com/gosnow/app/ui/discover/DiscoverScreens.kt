@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.ListAlt
@@ -59,6 +60,7 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -85,13 +87,15 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.launch
 
+private const val PAGE_SIZE = 10
+
+// Discover 首页入口
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiscoverScreen(
     onLostAndFoundClick: () -> Unit,
     onCarpoolClick: () -> Unit,
     onRoommateClick: () -> Unit,
-
 ) {
     Scaffold(
         topBar = {
@@ -161,20 +165,37 @@ fun DiscoverEntryCard(
             ) {
                 Icon(imageVector = icon, contentDescription = null, tint = color)
             }
-            Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(text = title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            Icon(imageVector = Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
 
+// -------------------- 失物招领 --------------------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LostAndFoundScreen(
     onBackClick: () -> Unit,
-    onPublishClick: () -> Unit
+    onPublishClick: () -> Unit,
+    onMyLostAndFoundClick: () -> Unit
 ) {
     var selectedResort by rememberSaveable { mutableStateOf<ResortRef?>(null) }
     var showResortPicker by remember { mutableStateOf(false) }
@@ -186,9 +207,13 @@ fun LostAndFoundScreen(
     val filteredList = sampleLostAndFoundList.filter { item ->
         val matchResort = selectedResort?.id?.let { item.resort?.id == it } ?: true
         val matchDate = selectedDate?.let { item.createdAt.toLocalDate() == it } ?: true
-        val matchSearch = searchQuery.isBlank() || item.description.contains(searchQuery, ignoreCase = true)
+        val matchSearch =
+            searchQuery.isBlank() || item.description.contains(searchQuery, ignoreCase = true)
         matchResort && matchDate && matchSearch
     }
+
+    var visibleCount by rememberSaveable { mutableStateOf(PAGE_SIZE) }
+    val visibleItems = filteredList.take(visibleCount)
 
     Scaffold(
         topBar = {
@@ -200,6 +225,12 @@ fun LostAndFoundScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onMyLostAndFoundClick) {
+                        Icon(
+                            Icons.Default.Article,
+                            contentDescription = "我的失物"
+                        )
+                    }
                     IconButton(onClick = onPublishClick) {
                         Icon(Icons.Default.Add, contentDescription = "发布")
                     }
@@ -219,35 +250,60 @@ fun LostAndFoundScreen(
                     onClick = { showResortPicker = true },
                     label = { Text(selectedResort?.name ?: "所有雪场") },
                     leadingIcon = {
-                        Icon(Icons.Default.Place, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Icon(
+                            Icons.Default.Place,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
                 )
                 AssistChip(
                     onClick = { showDatePicker = true },
                     label = { Text(selectedDate?.formatShort() ?: "日期") },
                     leadingIcon = {
-                        Icon(Icons.Default.CalendarToday, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Icon(
+                            Icons.Default.CalendarToday,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(
                 value = searchQuery,
-                onValueChange = { searchQuery = it },
+                onValueChange = {
+                    searchQuery = it
+                    visibleCount = PAGE_SIZE
+                },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("搜索物品关键词") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 singleLine = true
             )
             Spacer(modifier = Modifier.height(12.dp))
-            if (filteredList.isEmpty()) {
+            if (visibleItems.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(text = "没有找到相关物品", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = "没有找到相关物品",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(filteredList) { item ->
+                    items(visibleItems, key = { it.id }) { item ->
                         LostAndFoundCard(item = item)
+                    }
+                    if (visibleCount < filteredList.size) {
+                        item {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TextButton(
+                                onClick = { visibleCount += PAGE_SIZE },
+                                modifier = Modifier.align(Alignment.CenterHorizontally)
+                            ) {
+                                Text("加载更多")
+                            }
+                        }
                     }
                 }
             }
@@ -261,6 +317,7 @@ fun LostAndFoundScreen(
             onDismissRequest = { showResortPicker = false },
             onResortSelected = {
                 selectedResort = it
+                visibleCount = PAGE_SIZE
                 showResortPicker = false
             }
         )
@@ -273,12 +330,14 @@ fun LostAndFoundScreen(
                 TextButton(onClick = {
                     val millis = datePickerState.selectedDateMillis
                     selectedDate = millis?.toLocalDate()
+                    visibleCount = PAGE_SIZE
                     showDatePicker = false
                 }) { Text("确定") }
             },
             dismissButton = {
                 TextButton(onClick = {
                     selectedDate = null
+                    visibleCount = PAGE_SIZE
                     showDatePicker = false
                 }) { Text("清除") }
             }
@@ -305,7 +364,11 @@ fun LostAndFoundCard(item: LostAndFoundItem) {
                 item.resort?.let {
                     FilterChip(selected = false, onClick = {}, label = { Text(it.name) })
                 }
-                FilterChip(selected = false, onClick = {}, label = { Text(item.createdAt.formatShortDate()) })
+                FilterChip(
+                    selected = false,
+                    onClick = {},
+                    label = { Text(item.createdAt.formatShortDate()) }
+                )
             }
             Spacer(modifier = Modifier.height(10.dp))
             Text(
@@ -315,8 +378,15 @@ fun LostAndFoundCard(item: LostAndFoundItem) {
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(Icons.Default.Phone, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    Icons.Default.Phone,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
                 Text(text = item.contact, style = MaterialTheme.typography.bodyMedium)
             }
         }
@@ -337,7 +407,10 @@ fun LostAndFoundPublishScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    val isValid = description.isNotBlank() && contact.isNotBlank()
+    // 所有字段必填：类型、描述、联系方式、雪场
+    val isValid = description.isNotBlank() &&
+            contact.isNotBlank() &&
+            selectedResort != null
 
     Scaffold(
         topBar = {
@@ -369,7 +442,7 @@ fun LostAndFoundPublishScreen(
                 FilterChip(
                     selected = selectedType == LostFoundType.FOUND,
                     onClick = { selectedType = LostFoundType.FOUND },
-                    label = { Text("拾到") }
+                    label = { Text("捡到") }
                 )
             }
             OutlinedTextField(
@@ -393,13 +466,13 @@ fun LostAndFoundPublishScreen(
             ) {
                 Icon(Icons.Default.Place, contentDescription = null)
                 Spacer(modifier = Modifier.size(6.dp))
-                Text(text = selectedResort?.name ?: "选择雪场 (可选)")
+                Text(text = selectedResort?.name ?: "选择雪场")
             }
             Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = {
                     scope.launch {
-                        snackbarHostState.showSnackbar("发布成功（暂未接入后端）")
+                        snackbarHostState.showSnackbar("发布成功")
                         onPublished()
                     }
                 },
@@ -427,6 +500,119 @@ fun LostAndFoundPublishScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun MyLostAndFoundScreen(onBackClick: () -> Unit) {
+    val myList = remember {
+        mutableStateListOf<LostAndFoundItem>().apply { addAll(sampleLostAndFoundList) }
+    }
+    var deleteTarget by remember { mutableStateOf<LostAndFoundItem?>(null) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("我的失物招领") },
+                navigationIcon = {
+                    IconButton(onClick = onBackClick) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        if (myList.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("暂无失物招领记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(myList, key = { it.id }) { item ->
+                    ElevatedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = item.resort?.name ?: "未知雪场",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = item.createdAt.formatShortDate(),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = item.description,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = item.contact,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                IconButton(onClick = { deleteTarget = item }) {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = "删除",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("删除帖子") },
+            text = { Text("删除后无法恢复，确认删除这条失物招领信息吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    myList.remove(target)
+                    deleteTarget = null
+                }) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+}
+
+// -------------------- 顺风车 --------------------
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun CarpoolScreen(
     onBackClick: () -> Unit,
     onPublishClick: () -> Unit,
@@ -441,9 +627,12 @@ fun CarpoolScreen(
 
     val filteredList = sampleCarpoolList.filter { item ->
         !item.isCanceled &&
-            (selectedResort?.id?.let { item.resort?.id == it } ?: true) &&
-            (selectedDate?.let { item.departAt.toLocalDate() == it } ?: true)
+                (selectedResort?.id?.let { item.resort?.id == it } ?: true) &&
+                (selectedDate?.let { item.departAt.toLocalDate() == it } ?: true)
     }
+
+    var visibleCount by rememberSaveable { mutableStateOf(PAGE_SIZE) }
+    val visibleItems = filteredList.take(visibleCount)
 
     Scaffold(
         topBar = {
@@ -476,12 +665,24 @@ fun CarpoolScreen(
                 AssistChip(
                     onClick = { showResortPicker = true },
                     label = { Text(selectedResort?.name ?: "所有雪场") },
-                    leadingIcon = { Icon(Icons.Default.Place, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Place,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 )
                 AssistChip(
                     onClick = { showDatePicker = true },
                     label = { Text(selectedDate?.formatShort() ?: "日期") },
-                    leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.CalendarToday,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -489,14 +690,25 @@ fun CarpoolScreen(
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("加载中...")
                 }
-            } else if (filteredList.isEmpty()) {
+            } else if (visibleItems.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("暂无顺风车信息", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(filteredList) { item ->
+                    items(visibleItems, key = { it.id }) { item ->
                         CarpoolCard(item = item)
+                    }
+                    if (visibleCount < filteredList.size) {
+                        item {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TextButton(
+                                onClick = { visibleCount += PAGE_SIZE },
+                                modifier = Modifier.align(Alignment.CenterHorizontally)
+                            ) {
+                                Text("加载更多")
+                            }
+                        }
                     }
                 }
             }
@@ -510,6 +722,7 @@ fun CarpoolScreen(
             onDismissRequest = { showResortPicker = false },
             onResortSelected = {
                 selectedResort = it
+                visibleCount = PAGE_SIZE
                 showResortPicker = false
             }
         )
@@ -522,12 +735,14 @@ fun CarpoolScreen(
                 TextButton(onClick = {
                     val millis = datePickerState.selectedDateMillis
                     selectedDate = millis?.toLocalDate()
+                    visibleCount = PAGE_SIZE
                     showDatePicker = false
                 }) { Text("确定") }
             },
             dismissButton = {
                 TextButton(onClick = {
                     selectedDate = null
+                    visibleCount = PAGE_SIZE
                     showDatePicker = false
                 }) { Text("清除") }
             }
@@ -544,20 +759,57 @@ fun CarpoolCard(item: CarpoolItem) {
         colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
         shape = RoundedCornerShape(18.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(Icons.Default.Schedule, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Text(text = item.departAt.formatFull(), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    Icons.Default.Schedule,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = item.departAt.formatFull(),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+                )
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(Icons.Default.Place, contentDescription = null, tint = Color(0xFF5C6BC0))
-                Text(text = "出发地：${item.origin}", style = MaterialTheme.typography.bodyMedium)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    Icons.Default.Place,
+                    contentDescription = null,
+                    tint = Color(0xFF5C6BC0)
+                )
+                Text(
+                    text = "出发地：${item.origin}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(Icons.Default.DirectionsCar, contentDescription = null, tint = Color(0xFF26A69A))
-                Text(text = "目的地：${item.resort?.name ?: "未知雪场"}", style = MaterialTheme.typography.bodyMedium)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    Icons.Default.DirectionsCar,
+                    contentDescription = null,
+                    tint = Color(0xFF26A69A)
+                )
+                Text(
+                    text = "目的地：${item.resort?.name ?: "未知雪场"}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
-            Text(text = item.note, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = item.note,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -584,7 +836,11 @@ fun CarpoolPublishScreen(
     )
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val isValid = origin.isNotBlank() && note.isNotBlank()
+
+    // 出发地、备注(联系方式)、目的地雪场 必填
+    val isValid = origin.isNotBlank() &&
+            note.isNotBlank() &&
+            selectedResort != null
 
     Scaffold(
         topBar = {
@@ -662,7 +918,7 @@ fun CarpoolPublishScreen(
                 Button(
                     onClick = {
                         scope.launch {
-                            snackbarHostState.showSnackbar("发布成功（暂未接入后端）")
+                            snackbarHostState.showSnackbar("发布成功")
                             onPublished()
                         }
                     },
@@ -722,7 +978,11 @@ fun CarpoolPublishScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyCarpoolScreen(onBackClick: () -> Unit) {
-    val myList = sampleCarpoolList
+    val myList = remember {
+        mutableStateListOf<CarpoolItem>().apply { addAll(sampleCarpoolList) }
+    }
+    var deleteTarget by remember { mutableStateOf<CarpoolItem?>(null) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -735,40 +995,93 @@ fun MyCarpoolScreen(onBackClick: () -> Unit) {
             )
         }
     ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(myList) { item ->
-                ElevatedCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+        if (myList.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("暂无顺风车记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(myList, key = { it.id }) { item ->
+                    ElevatedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(18.dp)
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(text = item.departAt.formatFull(), style = MaterialTheme.typography.titleMedium)
-                            Text(text = item.resort?.name ?: "未知雪场", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(text = item.note, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = item.departAt.formatFull(),
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = item.resort?.name ?: "未知雪场",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = item.note,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                IconButton(onClick = { deleteTarget = item }) {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = "删除",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
-                        val statusColor = if (item.isCanceled) Color(0xFFEF5350) else Color(0xFF26A69A)
-                        Text(text = if (item.isCanceled) "已取消" else "进行中", color = statusColor, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
     }
+
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("删除帖子") },
+            text = { Text("删除后无法恢复，确认删除这条顺风车信息吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    myList.remove(target)
+                    deleteTarget = null
+                }) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
 }
 
+// -------------------- 拼房合租 --------------------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RoommateScreen(
@@ -781,6 +1094,9 @@ fun RoommateScreen(
     val filtered = sampleRoommateList.filter { item ->
         selectedResort?.id?.let { item.resort?.id == it } ?: true
     }
+
+    var visibleCount by rememberSaveable { mutableStateOf(PAGE_SIZE) }
+    val visibleItems = filtered.take(visibleCount)
 
     Scaffold(
         topBar = {
@@ -812,17 +1128,34 @@ fun RoommateScreen(
             AssistChip(
                 onClick = { showResortPicker = true },
                 label = { Text(selectedResort?.name ?: "所有雪场") },
-                leadingIcon = { Icon(Icons.Default.Place, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Place,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             )
             Spacer(modifier = Modifier.height(12.dp))
-            if (filtered.isEmpty()) {
+            if (visibleItems.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("暂无拼房信息", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(filtered) { item ->
+                    items(visibleItems, key = { it.id }) { item ->
                         RoommateCard(item = item)
+                    }
+                    if (visibleCount < filtered.size) {
+                        item {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TextButton(
+                                onClick = { visibleCount += PAGE_SIZE },
+                                modifier = Modifier.align(Alignment.CenterHorizontally)
+                            ) {
+                                Text("加载更多")
+                            }
+                        }
                     }
                 }
             }
@@ -836,6 +1169,7 @@ fun RoommateScreen(
             onDismissRequest = { showResortPicker = false },
             onResortSelected = {
                 selectedResort = it
+                visibleCount = PAGE_SIZE
                 showResortPicker = false
             }
         )
@@ -849,14 +1183,30 @@ fun RoommateCard(item: RoommateItem) {
         colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
         shape = RoundedCornerShape(18.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text(text = item.resort?.name ?: "未知雪场", style = MaterialTheme.typography.titleMedium)
-                Text(text = item.createdAt.formatShortDate(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = item.resort?.name ?: "未知雪场",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = item.createdAt.formatShortDate(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            Text(text = item.content, style = MaterialTheme.typography.bodyMedium)
-            val statusColor = if (item.isCanceled) Color(0xFFEF5350) else Color(0xFF26A69A)
-            Text(text = if (item.isCanceled) "已取消" else "进行中", color = statusColor, fontWeight = FontWeight.Bold)
+            // 首页展示正文内容
+            Text(
+                text = item.content,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -872,7 +1222,9 @@ fun RoommatePublishScreen(
     var content by rememberSaveable { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val isValid = content.isNotBlank()
+
+    // 雪场 + 内容必填
+    val isValid = content.isNotBlank() && selectedResort != null
 
     Scaffold(
         topBar = {
@@ -908,7 +1260,7 @@ fun RoommatePublishScreen(
                 value = content,
                 onValueChange = { content = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("拼房内容 (必填)") },
+                label = { Text("拼房内容") },
                 minLines = 4,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
             )
@@ -920,7 +1272,7 @@ fun RoommatePublishScreen(
             Button(
                 onClick = {
                     scope.launch {
-                        snackbarHostState.showSnackbar("发布成功（暂未接入后端）")
+                        snackbarHostState.showSnackbar("发布成功")
                         onPublished()
                     }
                 },
@@ -949,7 +1301,11 @@ fun RoommatePublishScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyRoommateScreen(onBackClick: () -> Unit) {
-    val myList = sampleRoommateList
+    val myList = remember {
+        mutableStateListOf<RoommateItem>().apply { addAll(sampleRoommateList) }
+    }
+    var deleteTarget by remember { mutableStateOf<RoommateItem?>(null) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -962,34 +1318,95 @@ fun MyRoommateScreen(onBackClick: () -> Unit) {
             )
         }
     ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(myList) { item ->
-                ElevatedCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                            Text(text = item.resort?.name ?: "未知雪场", style = MaterialTheme.typography.titleMedium)
-                            Text(text = item.createdAt.formatShortDate(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (myList.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("暂无拼房记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(myList, key = { it.id }) { item ->
+                    ElevatedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = item.resort?.name ?: "未知雪场",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = item.createdAt.formatShortDate(),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = item.content,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            // 删除按钮在右侧
+                            Row(
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                IconButton(onClick = { deleteTarget = item }) {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = "删除",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
-                        Text(text = item.content, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                        val statusColor = if (item.isCanceled) Color(0xFFEF5350) else Color(0xFF26A69A)
-                        Text(text = if (item.isCanceled) "已取消" else "进行中", color = statusColor, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
     }
+
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("删除帖子") },
+            text = { Text("删除后无法恢复，确认删除这条拼房信息吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    myList.remove(target)
+                    deleteTarget = null
+                }) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
 }
 
+// -------------------- 公共组件 --------------------
 @Composable
 fun ResortPickerDialog(
     allResorts: List<ResortRef>,
@@ -1039,14 +1456,19 @@ fun ResortPickerDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             val isSelected = resort.id == selectedResort?.id
-                            val bg = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent
+                            val bg = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                            else Color.Transparent
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(bg)
                                     .padding(8.dp)
                             ) {
-                                Text(resort.name, color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                                Text(
+                                    resort.name,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurface
+                                )
                             }
                         }
                     }
@@ -1075,26 +1497,34 @@ fun TimePickerDialog(
     )
 }
 
-private fun Long.toLocalDate(): LocalDate = Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()).toLocalDate()
+// 工具方法
+private fun Long.toLocalDate(): LocalDate =
+    Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()).toLocalDate()
 
-private fun LocalDate.formatShort(): String = DateTimeFormatter.ofPattern("MM/dd", Locale.getDefault()).format(this)
+private fun LocalDate.formatShort(): String =
+    DateTimeFormatter.ofPattern("MM/dd", Locale.getDefault()).format(this)
 
-private fun LocalDate.formatFullDate(): String = DateTimeFormatter.ofPattern("yyyy年MM月dd日", Locale.getDefault()).format(this)
+private fun LocalDate.formatFullDate(): String =
+    DateTimeFormatter.ofPattern("yyyy年MM月dd日", Locale.getDefault()).format(this)
 
-private fun LocalTime.formatTime(): String = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()).format(this)
+private fun LocalTime.formatTime(): String =
+    DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()).format(this)
 
-private fun LocalDateTime.formatShortDate(): String = DateTimeFormatter.ofPattern("MM/dd HH:mm", Locale.getDefault()).format(this)
+private fun LocalDateTime.formatShortDate(): String =
+    DateTimeFormatter.ofPattern("MM/dd HH:mm", Locale.getDefault()).format(this)
 
-private fun LocalDateTime.formatFull(): String = DateTimeFormatter.ofPattern("MM月dd日 HH:mm", Locale.getDefault()).format(this)
+private fun LocalDateTime.formatFull(): String =
+    DateTimeFormatter.ofPattern("MM月dd日 HH:mm", Locale.getDefault()).format(this)
 
-// region Preview
+// -------------------- Preview --------------------
 @Preview(showBackground = true)
 @Composable
 fun PreviewDiscoverScreen() {
     GosnowTheme {
         DiscoverScreen(
-            onLostAndFoundClick = {}, onCarpoolClick = {},
-            onRoommateClick = TODO(),
+            onLostAndFoundClick = {},
+            onCarpoolClick = {},
+            onRoommateClick = {}
         )
     }
 }
@@ -1103,7 +1533,11 @@ fun PreviewDiscoverScreen() {
 @Composable
 fun PreviewLostAndFoundScreen() {
     GosnowTheme {
-        LostAndFoundScreen(onBackClick = {}, onPublishClick = {})
+        LostAndFoundScreen(
+            onBackClick = {},
+            onPublishClick = {},
+            onMyLostAndFoundClick = {}
+        )
     }
 }
 
@@ -1122,9 +1556,8 @@ fun PreviewRoommateScreen() {
         RoommateScreen(onBackClick = {}, onPublishClick = {}, onMyRoommateClick = {})
     }
 }
-// endregion Preview
 
-// region Data models & samples
+// -------------------- Data models & samples --------------------
 enum class LostFoundType { LOST, FOUND }
 
 data class LostAndFoundItem(
@@ -1240,4 +1673,3 @@ private val sampleRoommateList = listOf(
         isCanceled = true
     )
 )
-// endregion Data models & samples

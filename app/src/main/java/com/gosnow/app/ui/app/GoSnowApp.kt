@@ -25,6 +25,7 @@ import com.gosnow.app.ui.discover.DiscoverScreen
 import com.gosnow.app.ui.discover.LostAndFoundPublishScreen
 import com.gosnow.app.ui.discover.LostAndFoundScreen
 import com.gosnow.app.ui.discover.MyCarpoolScreen
+import com.gosnow.app.ui.discover.MyLostAndFoundScreen
 import com.gosnow.app.ui.discover.MyRoommateScreen
 import com.gosnow.app.ui.discover.RoommatePublishScreen
 import com.gosnow.app.ui.discover.RoommateScreen
@@ -60,6 +61,9 @@ const val MY_ROOMMATE_ROUTE = "my_roommate"
 
 const val RECORD_ROUTE = "record"
 const val WELCOME_FLOW_ROUTE = "welcome_flow"
+
+const val LOST_AND_FOUND_MY_ROUTE = "lost_and_found_my"
+
 
 @Composable
 fun GoSnowApp() {
@@ -224,12 +228,15 @@ fun GoSnowMainApp(
             }
 
             // —— 失物招领 —— //
+            // —— 失物招领 —— //
             composable(LOST_AND_FOUND_ROUTE) {
                 LostAndFoundScreen(
                     onBackClick = { navController.popBackStack() },
-                    onPublishClick = { navController.navigate(LOST_AND_FOUND_PUBLISH_ROUTE) }
+                    onPublishClick = { navController.navigate(LOST_AND_FOUND_PUBLISH_ROUTE) },
+                    onMyLostAndFoundClick = { navController.navigate(LOST_AND_FOUND_MY_ROUTE) }
                 )
             }
+
             composable(LOST_AND_FOUND_PUBLISH_ROUTE) {
                 LostAndFoundPublishScreen(
                     onBackClick = { navController.popBackStack() },
@@ -239,6 +246,13 @@ fun GoSnowMainApp(
                     }
                 )
             }
+
+            composable(LOST_AND_FOUND_MY_ROUTE) {
+                MyLostAndFoundScreen(
+                    onBackClick = { navController.popBackStack() }
+                )
+            }
+
 
             // —— 顺风车 —— //
             composable(CARPOOL_ROUTE) {
