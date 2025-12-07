@@ -23,7 +23,7 @@
             </intent-filter>
         </activity>
         <activity
-            android:name="com.example.snowcircle.MainActivity"
+            android:name=".ui.snowcircle.MainActivity"
             android:exported="false"
             android:label="Snow Circle" />
     </application>

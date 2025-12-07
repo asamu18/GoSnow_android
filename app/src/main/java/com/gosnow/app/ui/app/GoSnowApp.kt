@@ -28,7 +28,7 @@ import com.gosnow.app.ui.discover.MyCarpoolScreen
 import com.gosnow.app.ui.discover.MyRoommateScreen
 import com.gosnow.app.ui.discover.RoommatePublishScreen
 import com.gosnow.app.ui.discover.RoommateScreen
-import com.gosnow.app.ui.feed.FeedScreen
+import com.gosnow.app.ui.snowcircle.ui.SnowApp
 import com.gosnow.app.ui.home.BottomNavItem
 import com.gosnow.app.ui.home.BottomNavigationBar
 import com.gosnow.app.ui.home.HomeScreen
@@ -205,11 +205,7 @@ fun GoSnowMainApp(
 
             // 雪圈
             composable(BottomNavItem.Community.route) {
-                FeedScreen(
-                    onCreatePostClick = {
-                        // TODO: 雪圈发帖导航
-                    }
-                )
+                SnowApp()
             }
 
             // 发现首页
