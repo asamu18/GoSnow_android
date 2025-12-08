@@ -1,18 +1,13 @@
 package com.gosnow.app.ui.record
 
+import android.Manifest
 import android.app.Activity
+import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -22,27 +17,30 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.outlined.Landscape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gosnow.app.recording.RecordingViewModel
+import com.gosnow.app.recording.location.SystemLocationService
+import com.gosnow.app.recording.metrics.BasicMetricsComputer
+import com.gosnow.app.ui.record.storage.FileSessionStore
+import com.mapbox.geojson.Point
+import com.mapbox.maps.CameraOptions
+import com.mapbox.maps.MapView
+import com.mapbox.maps.plugin.locationcomponent.location
 
 @Composable
 fun RecordRoute(
@@ -51,7 +49,9 @@ fun RecordRoute(
     val view = LocalView.current
     val activity = view.context as? Activity
     val window = activity?.window
+    val context = LocalContext.current
 
+    // 1. 状态栏 / 导航栏改成黑色
     DisposableEffect(Unit) {
         if (window != null) {
             val originalStatusBarColor = window.statusBarColor
@@ -76,132 +76,190 @@ fun RecordRoute(
         }
     }
 
-    var isRecording by rememberSaveable { mutableStateOf(false) }
+    // 2. 运行时请求定位权限
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { /* 这里你暂时不用管结果，SystemLocationService 会自己根据权限情况工作 */ }
+
+    LaunchedEffect(Unit) {
+        val fineGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        val coarseGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (!fineGranted && !coarseGranted) {
+            permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
+
+    // 3. 把之前那一整套 recording 体系接进来
+    val locationService = remember { SystemLocationService(context) }
+    val metrics = remember { BasicMetricsComputer() }
+    val sessionStore = remember { FileSessionStore(context) }
+    val recorder = remember { BasicSessionRecorder(locationService, metrics) }
+
+    val viewModel: RecordingViewModel = viewModel(
+        factory = RecordingViewModel.provideFactory(
+            recorder = recorder,
+            store = sessionStore
+        )
+    )
 
     RecordScreen(
-        durationText = "00:00:00",
-        distanceKm = 0.0,
-        maxSpeedKmh = 0.0,
-        verticalDropM = 0,
-        isRecording = isRecording,
-        onToggleRecording = { isRecording = !isRecording },
+        viewModel = viewModel,
         onBack = onBack
     )
 }
 
 @Composable
 fun RecordScreen(
-    durationText: String,
-    distanceKm: Double,
-    maxSpeedKmh: Double,
-    verticalDropM: Int,
-    isRecording: Boolean,
-    onToggleRecording: () -> Unit,
+    viewModel: RecordingViewModel,
     onBack: () -> Unit
 ) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = Color(0xFF050505)
+    val durationText = viewModel.durationText
+    val distanceKm = viewModel.distanceKm
+    val maxSpeedKmh = viewModel.maxSpeedKmh
+    val verticalDropM = viewModel.verticalDropM
+    val isRecording = viewModel.isRecording
+
+    Box(
+        modifier = Modifier.fillMaxSize()
     ) {
-        Column(
+        // 背景 Mapbox 地图
+        RecordingMapView(
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // 顶部返回按钮
+        IconButton(
+            onClick = onBack,
             modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp)
+                .padding(16.dp)
+                .align(Alignment.TopStart)
+                .background(Color(0x66000000), RoundedCornerShape(999.dp))
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "返回",
+                tint = Color.White
+            )
+        }
+
+        // 底部半透明控制面板
+        Surface(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+            color = Color(0xE6050505), // 带一点透明度
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 20.dp)
             ) {
-                IconButton(onClick = onBack) {
+                // 时间
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "返回",
-                        tint = Color.White
+                        imageVector = Icons.Filled.AccessTime,
+                        contentDescription = null,
+                        tint = Color(0xFF8C8C8C)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "本次滑行时间",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF8C8C8C)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = durationText,
+                        fontSize = 40.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        textAlign = TextAlign.Center
                     )
                 }
-            }
 
-            Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.AccessTime,
-                    contentDescription = null,
-                    tint = Color(0xFF8C8C8C)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "本次滑行时间",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF8C8C8C)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = durationText,
-                    fontSize = 56.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    textAlign = TextAlign.Center
-                )
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                StatCard(
-                    title = "滑行里程",
-                    value = String.format("%.1f km", distanceKm),
-                    icon = Icons.Filled.TrendingUp
-                )
-                StatCard(
-                    title = "最高速度",
-                    value = String.format("%.0f km/h", maxSpeedKmh),
-                    icon = Icons.Filled.Speed
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                StatCard(
-                    title = "累计落差",
-                    value = "$verticalDropM m",
-                    icon = Icons.Outlined.Landscape
-                )
-                val cardColor = if (isRecording) Color(0xFFC6FF3F) else Color.White
-                val contentColor = Color.Black
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(88.dp)
-                        .background(cardColor, shape = RoundedCornerShape(24.dp))
-                        .clickable { onToggleRecording() },
-                    contentAlignment = Alignment.Center
+                // 第一行：里程 + 最高速度
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    StatCard(
+                        modifier = Modifier.weight(1f),
+                        title = "滑行里程",
+                        value = String.format("%.1f km", distanceKm),
+                        icon = Icons.Filled.TrendingUp
+                    )
+                    StatCard(
+                        modifier = Modifier.weight(1f),
+                        title = "最高速度",
+                        value = String.format("%.0f km/h", maxSpeedKmh),
+                        icon = Icons.Filled.Speed
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 第二行：累计落差 + 开始/结束按钮（四个卡片尺寸一致）
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    StatCard(
+                        modifier = Modifier.weight(1f),
+                        title = "累计落差",
+                        value = "$verticalDropM m",
+                        icon = Icons.Outlined.Landscape
+                    )
+
+                    val cardColor = if (isRecording) Color(0xFFC6FF3F) else Color.White
+                    val contentColor = Color.Black
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(88.dp)
+                            .background(cardColor, shape = RoundedCornerShape(24.dp))
+                            .clickable { viewModel.onToggleRecording() }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(
-                            imageVector = if (isRecording) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-                            contentDescription = null,
-                            tint = contentColor
-                        )
-                        Text(
-                            text = if (isRecording) "结束记录" else "开始记录",
-                            color = contentColor,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isRecording) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                                contentDescription = null,
+                                tint = contentColor
+                            )
+                            Text(
+                                text = if (isRecording) "结束记录" else "开始记录",
+                                color = contentColor,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
@@ -210,14 +268,66 @@ fun RecordScreen(
 }
 
 @Composable
+private fun RecordingMapView(
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+
+    AndroidView(
+        modifier = modifier,
+        factory = { ctx: Context ->
+            MapView(ctx).apply {
+                val mapboxMap = this.getMapboxMap()
+
+                // 默认中心：先给个你常用雪场的经纬度（这里随便写了一组，记得改成自己的）
+                val defaultCenter = Point.fromLngLat(
+                    138.5, // lng
+                    36.7   // lat
+                )
+
+                // 打开位置组件（蓝点）
+                val locationPlugin = this.location
+                locationPlugin.updateSettings {
+                    enabled = true
+                    pulsingEnabled = true
+                }
+
+                // 样式：你的自定义 contour style
+                mapboxMap.loadStyleUri(
+                    "mapbox://styles/gosnow/cmikjh06p00ys01s68fmy9nor"
+                ) {
+                    // 初始相机
+                    mapboxMap.setCamera(
+                        CameraOptions.Builder()
+                            .center(defaultCenter)
+                            .zoom(17.5) // 越大越近，比例尺数值越小
+                            .build()
+                    )
+
+                    // 让相机跟随蓝点（用户移动时，始终居中）
+                    locationPlugin.addOnIndicatorPositionChangedListener { point ->
+                        mapboxMap.setCamera(
+                            CameraOptions.Builder()
+                                .center(point)
+                                .zoom(17.5)
+                                .build()
+                        )
+                    }
+                }
+            }
+        }
+    )
+}
+
+@Composable
 private fun StatCard(
+    modifier: Modifier = Modifier,
     title: String,
     value: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector
 ) {
     Column(
-        modifier = Modifier
-            //.weight(1f)
+        modifier = modifier
             .height(88.dp)
             .background(color = Color(0xFF0F0F0F), shape = RoundedCornerShape(24.dp))
             .padding(horizontal = 16.dp, vertical = 12.dp),

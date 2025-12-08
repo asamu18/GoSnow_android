@@ -8,7 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private const val MAX_SESSIONS = 500
+private const val MAX_SESSIONS = 10000
 
 interface SessionStore {
     suspend fun saveSession(session: SkiSession)
