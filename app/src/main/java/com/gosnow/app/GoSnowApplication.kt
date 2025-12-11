@@ -1,14 +1,12 @@
 package com.gosnow.app
 
-// com/gosnow/app/GoSnowApplication.kt
-
-
 import android.app.Application
-import com.gosnow.app.datasupabase.SupabaseManager
+import com.gosnow.app.datasupabase.SupabaseClientProvider
 
 class GoSnowApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        SupabaseManager.initialize(this)
+        // 提前创建 SupabaseClient，确保全局单例就绪
+        SupabaseClientProvider.supabaseClient
     }
 }

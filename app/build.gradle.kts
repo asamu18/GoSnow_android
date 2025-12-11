@@ -94,6 +94,13 @@ dependencies {
     implementation(libs.okhttp)
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
 
+    // Supabase Kotlin (auth + Ktor client)
+    implementation(platform("io.github.jan-tennert.supabase:bom:2.4.0"))
+    implementation("io.github.jan-tennert.supabase:auth-kt-android")
+    implementation("io.ktor:ktor-client-android:2.3.12")
+    implementation("io.ktor:ktor-client-content-negotiation:2.3.12")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.12")
+
     // DataStore
     implementation(libs.androidx.datastore.preferences)
 
