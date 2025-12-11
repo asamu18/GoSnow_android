@@ -33,8 +33,8 @@ import com.gosnow.app.ui.snowcircle.ui.SnowApp
 import com.gosnow.app.ui.home.BottomNavItem
 import com.gosnow.app.ui.home.BottomNavigationBar
 import com.gosnow.app.ui.home.HomeScreen
-import com.gosnow.app.ui.login.LoginViewModel
-import com.gosnow.app.ui.login.PhoneLoginScreen
+import com.gosnow.app.ui.login.AuthViewModel
+import com.gosnow.app.ui.login.EmailAuthScreen
 import com.gosnow.app.ui.login.TermsScreen
 import com.gosnow.app.ui.login.WelcomeAuthIntroScreen
 import com.gosnow.app.ui.record.RecordRoute
@@ -85,8 +85,8 @@ fun GoSnowApp() {
     val prefs = remember { context.getSharedPreferences("gosnow_prefs", Context.MODE_PRIVATE) }
     var hasSeenWelcome by remember { mutableStateOf(prefs.getBoolean("has_seen_welcome_v1", false)) }
 
-    val loginViewModel: LoginViewModel = viewModel(factory = LoginViewModel.provideFactory(context))
-    val uiState by loginViewModel.uiState.collectAsState()
+    val authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.provideFactory(context))
+    val uiState by authViewModel.uiState.collectAsState()
 
     LaunchedEffect(uiState.isLoggedIn, hasSeenWelcome) {
         val targetRoute = when {
@@ -111,17 +111,18 @@ fun GoSnowApp() {
         composable(WELCOME_AUTH_ROUTE) {
             WelcomeAuthIntroScreen(
                 isCheckingSession = uiState.isCheckingSession,
-                onStartPhoneLogin = { authNavController.navigate(PHONE_LOGIN_ROUTE) },
+                onStartEmailLogin = { authNavController.navigate(PHONE_LOGIN_ROUTE) },
                 onTermsClick = { authNavController.navigate(TERMS_ROUTE) }
             )
         }
         composable(PHONE_LOGIN_ROUTE) {
-            PhoneLoginScreen(
+            EmailAuthScreen(
                 uiState = uiState,
-                onPhoneChange = loginViewModel::onPhoneChange,
-                onVerificationCodeChange = loginViewModel::onVerificationCodeChange,
-                onSendCode = loginViewModel::sendVerificationCode,
-                onLoginClick = loginViewModel::verifyCodeAndLogin,
+                onEmailChange = authViewModel::onEmailChange,
+                onPasswordChange = authViewModel::onPasswordChange,
+                onConfirmPasswordChange = authViewModel::onConfirmPasswordChange,
+                onSubmit = authViewModel::submit,
+                onSwitchMode = authViewModel::switchMode,
                 onBackClick = { authNavController.popBackStack() },
                 onTermsClick = { authNavController.navigate(TERMS_ROUTE) }
             )
@@ -144,7 +145,7 @@ fun GoSnowApp() {
         composable(MAIN_ROUTE) {
             GoSnowMainApp(
                 onLogout = {
-                    loginViewModel.logout()
+                    authViewModel.logout()
                     hasSeenWelcome = prefs.getBoolean("has_seen_welcome_v1", false)
                     authNavController.navigate(WELCOME_AUTH_ROUTE) {
                         popUpTo(authNavController.graph.startDestinationId) { inclusive = true }
