@@ -4,18 +4,15 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.gosnow.app.data.auth.AuthApiService
-import com.gosnow.app.data.auth.AuthPreferences
-import com.gosnow.app.data.auth.AuthRepository
-import kotlinx.coroutines.Job
+import com.gosnow.app.datasupabase.SupabaseManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-private const val MIN_CODE_LENGTH = 4
-private const val MIN_PHONE_LENGTH = 6
+// 和 iOS 保持一致：手机号 11 位 + 验证码 6 位
+private const val MIN_PHONE_LENGTH = 11
+private const val MIN_CODE_LENGTH = 6
 
 data class LoginUiState(
     val phoneNumber: String = "",
@@ -28,27 +25,33 @@ data class LoginUiState(
     val isCheckingSession: Boolean = true
 )
 
-class LoginViewModel(
-    private val repository: AuthRepository
-) : ViewModel() {
+class LoginViewModel : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState
 
-    private var sessionJob: Job? = null
-
     init {
-        observeSession()
+        checkExistingSession()
     }
 
-    private fun observeSession() {
-        sessionJob?.cancel()
-        sessionJob = viewModelScope.launch {
-            repository.session.collectLatest { session ->
+    /**
+     * 启动时检查 Supabase 是否已有登录会话
+     */
+    private fun checkExistingSession() {
+        viewModelScope.launch {
+            try {
+                val user = SupabaseManager.getCurrentUser()
                 _uiState.update {
                     it.copy(
-                        isLoggedIn = session != null,
-                        errorMessage = null,
+                        isLoggedIn = user != null,
+                        isCheckingSession = false,
+                        errorMessage = null
+                    )
+                }
+            } catch (_: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isLoggedIn = false,
                         isCheckingSession = false
                     )
                 }
@@ -67,59 +70,78 @@ class LoginViewModel(
     }
 
     fun onVerificationCodeChange(value: String) {
-        _uiState.update { it.copy(verificationCode = value.trim(), errorMessage = null) }
+        _uiState.update {
+            it.copy(
+                verificationCode = value.trim(),
+                errorMessage = null
+            )
+        }
     }
 
+    /**
+     * 发送验证码
+     */
     fun sendVerificationCode() {
-        val phone = _uiState.value.phoneNumber
+        val phone = _uiState.value.phoneNumber.filter { it.isDigit() }
 
         if (phone.length < MIN_PHONE_LENGTH) {
-            _uiState.update { it.copy(errorMessage = "请输入有效的手机号") }
+            _uiState.update { it.copy(errorMessage = "请输入 11 位手机号") }
             return
         }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isSendingCode = true, errorMessage = null) }
             try {
-                repository.sendSmsCode(phone)
+                SupabaseManager.sendLoginOtp(phone)
                 _uiState.update { it.copy(codeSent = true) }
-            } catch (e: AuthApiService.AuthApiException) {
-                _uiState.update { it.copy(errorMessage = e.message) }
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
-                        errorMessage = e.message ?: "验证码发送失败，请稍后重试"
+                        errorMessage = e.message ?: "验证码发送失败，请稍后重试",
+                        codeSent = false
                     )
                 }
-            }
-            finally {
+            } finally {
                 _uiState.update { it.copy(isSendingCode = false) }
             }
         }
     }
 
+    /**
+     * 校验验证码并登录
+     */
     fun verifyCodeAndLogin() {
-        val phone = _uiState.value.phoneNumber
-        val code = _uiState.value.verificationCode
+        val phone = _uiState.value.phoneNumber.filter { it.isDigit() }
+        val code = _uiState.value.verificationCode.filter { it.isDigit() }
 
         if (phone.length < MIN_PHONE_LENGTH) {
-            _uiState.update { it.copy(errorMessage = "请输入有效的手机号") }
+            _uiState.update { it.copy(errorMessage = "请输入 11 位手机号") }
             return
         }
 
         if (code.length < MIN_CODE_LENGTH) {
-            _uiState.update { it.copy(errorMessage = "请输入短信验证码") }
+            _uiState.update { it.copy(errorMessage = "请输入 6 位短信验证码") }
             return
         }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isVerifyingCode = true, errorMessage = null) }
             try {
-                repository.loginWithSms(phone, code)
-            } catch (e: AuthApiService.AuthApiException) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                SupabaseManager.verifyLoginOtp(phone, code)
+
+                _uiState.update {
+                    it.copy(
+                        isLoggedIn = true,
+                        errorMessage = null
+                    )
+                }
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "登录失败，请稍后重试") }
+                _uiState.update {
+                    it.copy(
+                        errorMessage = e.message ?: "登录失败，请稍后重试",
+                        isLoggedIn = false
+                    )
+                }
             } finally {
                 _uiState.update { it.copy(isVerifyingCode = false) }
             }
@@ -128,29 +150,30 @@ class LoginViewModel(
 
     fun logout() {
         viewModelScope.launch {
-            repository.logout()
-            _uiState.update {
-                it.copy(
-                    phoneNumber = "",
-                    verificationCode = "",
-                    codeSent = false,
-                    errorMessage = null
-                )
+            try {
+                SupabaseManager.logout()
+            } catch (_: Exception) {
+                // 即使 signOut 报错，也尽量在本地清一下状态
+            } finally {
+                _uiState.update {
+                    it.copy(
+                        phoneNumber = "",
+                        verificationCode = "",
+                        codeSent = false,
+                        isLoggedIn = false,
+                        errorMessage = null
+                    )
+                }
             }
         }
     }
 
     companion object {
-        fun provideFactory(context: Context): ViewModelProvider.Factory =
+        fun provideFactory(@Suppress("UNUSED_PARAMETER") context: Context): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    val preferences = AuthPreferences(context.applicationContext)
-                    val repository = AuthRepository(
-                        apiService = AuthApiService(),
-                        preferences = preferences
-                    )
                     @Suppress("UNCHECKED_CAST")
-                    return LoginViewModel(repository) as T
+                    return LoginViewModel() as T
                 }
             }
     }

@@ -37,15 +37,27 @@ import com.gosnow.app.ui.login.LoginViewModel
 import com.gosnow.app.ui.login.PhoneLoginScreen
 import com.gosnow.app.ui.login.TermsScreen
 import com.gosnow.app.ui.login.WelcomeAuthIntroScreen
-import com.gosnow.app.ui.profile.ProfileScreen
 import com.gosnow.app.ui.record.RecordRoute
+import com.gosnow.app.ui.stats.StatsScreen
 import com.gosnow.app.ui.welcome.WelcomeFlowScreen
+
+// ⭐ 新的设置页相关 import
+import com.gosnow.app.ui.settings.SettingsScreen
+import com.gosnow.app.ui.settings.AccountPrivacyScreen
+import com.gosnow.app.ui.settings.FeedbackScreen
+import com.gosnow.app.ui.settings.AboutScreen
+import com.gosnow.app.ui.settings.EditProfileScreen
+import com.gosnow.app.ui.settings.ROUTE_ACCOUNT_PRIVACY
+import com.gosnow.app.ui.settings.ROUTE_FEEDBACK
+import com.gosnow.app.ui.settings.ROUTE_ABOUT
+import com.gosnow.app.ui.settings.ROUTE_EDIT_PROFILE
 
 private const val WELCOME_AUTH_ROUTE = "welcome_auth"
 private const val PHONE_LOGIN_ROUTE = "phone_login"
 private const val TERMS_ROUTE = "terms"
 private const val MAIN_ROUTE = "main"
 
+// 仍然用 PROFILE_ROUTE 作为“个人/设置”入口
 const val PROFILE_ROUTE = "profile"
 
 const val LOST_AND_FOUND_ROUTE = "lost_and_found"
@@ -64,6 +76,7 @@ const val WELCOME_FLOW_ROUTE = "welcome_flow"
 
 const val LOST_AND_FOUND_MY_ROUTE = "lost_and_found_my"
 
+const val STATS_ROUTE = "stats"
 
 @Composable
 fun GoSnowApp() {
@@ -187,11 +200,19 @@ fun GoSnowMainApp(
             startDestination = BottomNavItem.Record.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            // 记录首页
+            // 记录首页（Home）
             composable(BottomNavItem.Record.route) {
                 HomeScreen(
                     onStartRecording = { navController.navigate(RECORD_ROUTE) },
-                    onFeatureClick = { /* 记录页里的功能入口，后面再补 */ },
+                    onFeatureClick = { featureTitle ->
+                        if (featureTitle == "滑行数据") {
+                            navController.navigate(STATS_ROUTE)
+                        }
+                    },
+                    onAvatarClick = {
+                        // 头像 → 设置页
+                        navController.navigate(PROFILE_ROUTE)
+                    },
                     onBottomNavSelected = { item ->
                         if (item.route != BottomNavItem.Record.route) {
                             navController.navigate(item.route) {
@@ -207,6 +228,11 @@ fun GoSnowMainApp(
                 )
             }
 
+            // 统计页
+            composable(STATS_ROUTE) {
+                StatsScreen()
+            }
+
             // 雪圈
             composable(BottomNavItem.Community.route) {
                 SnowApp()
@@ -218,16 +244,82 @@ fun GoSnowMainApp(
                     onLostAndFoundClick = { navController.navigate(LOST_AND_FOUND_ROUTE) },
                     onCarpoolClick = { navController.navigate(CARPOOL_ROUTE) },
                     onRoommateClick = { navController.navigate(ROOMMATE_ROUTE) },
-
                 )
             }
 
-            // 个人中心
+            /* ---------------- 设置主页面 ---------------- */
             composable(PROFILE_ROUTE) {
-                ProfileScreen(onLogout = onLogout)
+                // TODO: 这里以后可以从 DataStore / Supabase 拿真实昵称和头像
+                val userName = "滑雪爱好者"
+                val avatarUrl: String? = null
+
+                SettingsScreen(
+                    userName = userName,
+                    avatarUrl = avatarUrl,
+                    onBackClick = { navController.popBackStack() },
+                    onEditProfileClick = { navController.navigate(ROUTE_EDIT_PROFILE) },
+                    onAccountPrivacyClick = { navController.navigate(ROUTE_ACCOUNT_PRIVACY) },
+                    onFeedbackClick = { navController.navigate(ROUTE_FEEDBACK) },
+                    onAboutClick = { navController.navigate(ROUTE_ABOUT) },
+                    onLogoutClick = {
+                        // 退出登录后直接回到登录流程
+                        onLogout()
+                    }
+                )
             }
 
-            // —— 失物招领 —— //
+            /* ---------------- 设置子页面：账户与隐私 ---------------- */
+            composable(ROUTE_ACCOUNT_PRIVACY) {
+                AccountPrivacyScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onDeleteAccountClick = {
+                        // TODO: 调用真正的销号逻辑
+                    },
+                    onOpenSystemSettingsClick = {
+                        // TODO: 用 Intent 打开系统设置（需要 LocalContext）
+                    }
+                )
+            }
+
+            /* ---------------- 设置子页面：用户反馈 ---------------- */
+            composable(ROUTE_FEEDBACK) {
+                FeedbackScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onSubmitClick = { title, content ->
+                        // TODO: 把反馈发到后端 / 邮箱
+                    }
+                )
+            }
+
+            /* ---------------- 设置子页面：关于我们 ---------------- */
+            composable(ROUTE_ABOUT) {
+                AboutScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onCommunityGuidelinesClick = {
+                        // TODO: 跳到社区准则页面
+                    },
+                    onPrivacyPolicyClick = {
+                        // TODO: 复用 TermsScreen，或者打开网页
+                    }
+                )
+            }
+
+            /* ---------------- 设置子页面：编辑资料 ---------------- */
+            composable(ROUTE_EDIT_PROFILE) {
+                val currentName = "滑雪爱好者"
+                val avatarUrl: String? = null
+
+                EditProfileScreen(
+                    currentName = currentName,
+                    avatarUrl = avatarUrl,
+                    onBackClick = { navController.popBackStack() },
+                    onSaveClick = { newName ->
+                        // TODO: 保存昵称到本地 / 后端，然后 popBackStack
+                        navController.popBackStack()
+                    }
+                )
+            }
+
             // —— 失物招领 —— //
             composable(LOST_AND_FOUND_ROUTE) {
                 LostAndFoundScreen(
@@ -241,7 +333,6 @@ fun GoSnowMainApp(
                 LostAndFoundPublishScreen(
                     onBackClick = { navController.popBackStack() },
                     onPublished = {
-                        // 关闭发布页，回到列表
                         navController.popBackStack()
                     }
                 )
@@ -252,7 +343,6 @@ fun GoSnowMainApp(
                     onBackClick = { navController.popBackStack() }
                 )
             }
-
 
             // —— 顺风车 —— //
             composable(CARPOOL_ROUTE) {

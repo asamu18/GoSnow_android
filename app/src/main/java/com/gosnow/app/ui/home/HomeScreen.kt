@@ -1,6 +1,7 @@
 package com.gosnow.app.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,13 +21,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.Celebration
 import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
@@ -42,7 +39,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -57,12 +53,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
-import kotlin.math.abs
-import androidx.compose.material.icons.filled.DirectionsRun
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.DownhillSkiing
-
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.RadioButtonChecked
+import kotlin.math.abs
 
 /**
  * UI state for the Home screen.
@@ -104,8 +100,9 @@ sealed class BottomNavItem(
 @Composable
 fun HomeScreen(
     onStartRecording: () -> Unit,
-    onFeatureClick: (String) -> Unit,
-    onBottomNavSelected: (BottomNavItem) -> Unit, // 现在不再在内部使用，由外层 Scaffold 管理导航栏
+    onFeatureClick: (String) -> Unit,        // 哪个功能交给外层决定
+    onAvatarClick: () -> Unit,              // 点击右上角头像
+    onBottomNavSelected: (BottomNavItem) -> Unit,
     currentRoute: String,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = viewModel()
@@ -122,7 +119,7 @@ fun HomeScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(innerPadding)
         ) {
-            HeaderSection()
+            HeaderSection(onAvatarClick = onAvatarClick)
             Spacer(modifier = Modifier.height(20.dp))
             TodayHeroCard(uiState)
             Spacer(modifier = Modifier.height(24.dp))
@@ -139,7 +136,9 @@ fun HomeScreen(
 /* ------------------------ Header ------------------------ */
 
 @Composable
-private fun HeaderSection() {
+private fun HeaderSection(
+    onAvatarClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -156,12 +155,13 @@ private fun HeaderSection() {
             color = Color(0xFF111111)
         )
 
-        // 右侧简单头像占位，后面你可以换成真实头像
+        // 右上角头像：可点击，进入个人 / 设置页
         Box(
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF111111)),
+                .background(Color(0xFF111111))
+                .clickable { onAvatarClick() },
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -174,8 +174,8 @@ private fun HeaderSection() {
     }
 }
 
-
 /* ------------------------ Today Hero Card ------------------------ */
+
 @Composable
 private fun TodayHeroCard(uiState: HomeUiState) {
     ElevatedCard(
@@ -265,39 +265,7 @@ private fun TodayDeltaPill(deltaKm: Double) {
     }
 }
 
-
-
-
-
-@Composable
-private fun MetricChip(label: String, value: String) {
-    Surface(
-        color = Color.White.copy(alpha = 0.7f),
-        shape = RoundedCornerShape(999.dp),
-        tonalElevation = 0.dp
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF111111)
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodySmall,
-                color = Color(0xFF3A3A3C)
-            )
-        }
-    }
-}
-
 /* ------------------------ Lifetime Stats ------------------------ */
-
 
 @Composable
 private fun LifetimeStatsSection(uiState: HomeUiState) {
@@ -317,7 +285,6 @@ private fun LifetimeStatsSection(uiState: HomeUiState) {
                 .height(IntrinsicSize.Min),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 左侧：总里程，大卡片
             DistanceStatCard(
                 title = "总里程",
                 value = String.format("%.1f", uiState.totalDistanceKm),
@@ -328,8 +295,6 @@ private fun LifetimeStatsSection(uiState: HomeUiState) {
                     .fillMaxHeight()
             )
 
-
-            // 右侧：上下两个小卡片
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -358,6 +323,7 @@ private fun LifetimeStatsSection(uiState: HomeUiState) {
         }
     }
 }
+
 @Composable
 private fun DistanceStatCard(
     title: String,
@@ -378,7 +344,6 @@ private fun DistanceStatCard(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            // 顶部：图标 + 标题
             Row(
                 modifier = Modifier.align(Alignment.TopStart),
                 verticalAlignment = Alignment.CenterVertically,
@@ -405,7 +370,6 @@ private fun DistanceStatCard(
                 )
             }
 
-            // 中间：大号数字
             Text(
                 text = value,
                 style = MaterialTheme.typography.displaySmall.copy(
@@ -416,7 +380,6 @@ private fun DistanceStatCard(
                 modifier = Modifier.align(Alignment.CenterStart)
             )
 
-            // 底部：单位
             Text(
                 text = "km",
                 style = MaterialTheme.typography.bodySmall,
@@ -480,8 +443,6 @@ private fun StatCard(
     }
 }
 
-
-
 /* ------------------------ Featured section ------------------------ */
 
 @Composable
@@ -497,16 +458,26 @@ private fun FeaturedSection(onFeatureClick: (String) -> Unit) {
         )
         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(featureItems) { item ->
-                FeatureTile(item = item, onClick = { onFeatureClick(item.title) })
+                FeatureTile(
+                    item = item,
+                    onClick = { onFeatureClick(item.title) }
+                )
             }
         }
     }
 }
 
 private val featureItems = listOf(
-    FeatureTileData(title = "滑行数据", subtitle = "周 / 月 / 雪季趋势图表", icon = Icons.Filled.BarChart),
-    FeatureTileData(title = "雪况投票", subtitle = "一起评价今日雪况", icon = Icons.Filled.Celebration),
-    FeatureTileData(title = "更多功能", subtitle = "与朋友一起玩雪", icon = Icons.Filled.Explore)
+    FeatureTileData(
+        title = "滑行数据",
+        subtitle = "周 / 月 / 雪季趋势图表",
+        icon = Icons.Filled.BarChart
+    ),
+    FeatureTileData(
+        title = "更多功能",
+        subtitle = "更多功能赶来中",
+        icon = Icons.Filled.Explore
+    )
 )
 
 @Composable
@@ -625,7 +596,8 @@ fun HomeScreenPreview() {
     GosnowTheme {
         HomeScreen(
             onStartRecording = {},
-            onFeatureClick = {},
+            onFeatureClick = { _ -> },
+            onAvatarClick = {},
             onBottomNavSelected = {},
             currentRoute = BottomNavItem.Record.route
         )
