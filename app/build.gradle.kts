@@ -21,7 +21,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-
+        // 直接用 BuildConfig 暴露 Supabase 配置（跟你原来一样）
         buildConfigField(
             "String",
             "SUPABASE_URL",
@@ -58,7 +58,7 @@ android {
     }
 }
 
-// 这里还是保留你原来的 localProperties 工具函数（虽然现在没用到）
+// 保留你原来的 localProperties 工具函数（以后想改成本地配置也方便）
 val localProperties = Properties().apply {
     val localPropertiesFile = rootProject.file("local.properties")
     if (localPropertiesFile.exists()) {
@@ -71,7 +71,6 @@ fun getConfigOrEnv(key: String): String =
 
 val supabaseUrl: String = getConfigOrEnv("SUPABASE_URL")
 val supabaseAnonKey: String = getConfigOrEnv("SUPABASE_ANON_KEY")
-
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -89,18 +88,37 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.compose.material3)
 
-    // 协程 & 网络
+    // 协程 & 网络（非 Supabase）
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
 
-    // Supabase Kotlin (auth + Ktor client)
+    // ================= Supabase Kotlin（用 2.4.0 BOM）=================
+
+    // 1. Supabase BOM：只给 BOM 写版本号
     implementation(platform("io.github.jan-tennert.supabase:bom:2.4.0"))
-    implementation("io.github.jan-tennert.supabase:auth-kt")
-    implementation("io.ktor:ktor-client-android:2.3.12")
-    implementation("io.ktor:ktor-client-content-negotiation:2.3.12")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.12")
-    implementation("io.ktor:ktor-client-logging:2.3.12")
+
+    // 2. 核心 SupabaseClient
+    implementation("io.github.jan-tennert.supabase:supabase-kt")
+
+    // 3. 认证（GoTrue）
+    implementation("io.github.jan-tennert.supabase:gotrue-kt")
+
+    // 4. 如果你要用数据库和存储，也一起先加上没问题
+    implementation("io.github.jan-tennert.supabase:postgrest-kt")
+    implementation("io.github.jan-tennert.supabase:storage-kt")
+    // 以后需要再加：
+    // implementation("io.github.jan-tennert.supabase:realtime-kt")
+    // implementation("io.github.jan-tennert.supabase:functions-kt")
+
+    // 5. Ktor（跟 2.4.0 兼容的版本）
+    val ktorVersion = "2.3.12"
+    implementation("io.ktor:ktor-client-android:$ktorVersion")
+    implementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:$ktorVersion")
+    implementation("io.ktor:ktor-client-logging:$ktorVersion")
+
+    // ================= 其它依赖 =================
 
     // DataStore
     implementation(libs.androidx.datastore.preferences)
@@ -122,16 +140,10 @@ dependencies {
     implementation("com.patrykandpatrick.vico:compose:$vicoVersion")
     implementation("com.patrykandpatrick.vico:compose-m3:$vicoVersion")
 
-
-
-
-
-
-    // JSON 序列化（你原来就有，保留）
+    // JSON 序列化
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     // ---------- 测试 ----------
-
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -140,3 +152,4 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
+

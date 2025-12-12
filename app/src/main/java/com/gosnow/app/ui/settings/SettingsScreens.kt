@@ -72,7 +72,9 @@ import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
-import com.gosnow.app.datasupabase.SupabaseManager
+
+import com.gosnow.app.datasupabase.ProfileRepository
+
 import com.gosnow.app.util.loadAndCompressImage
 import kotlinx.coroutines.launch
 
@@ -786,12 +788,14 @@ fun EditProfileScreen(
                                         loadAndCompressImage(context, uri)
                                     }
 
-                                    // 调用 SupabaseManager 更新
-                                    val newAvatarUrl = SupabaseManager.updateProfile(
+
+                                    // 调用 ProfileRepository 更新
+                                    val newAvatarUrl = ProfileRepository.updateProfile(
                                         nickname = trimmed,
                                         avatarBytes = avatarBytes,
                                         currentAvatarUrl = avatarUrl
                                     )
+
 
                                     // 可以在这里把新名字传给上层
                                     onSaveClick(trimmed)
