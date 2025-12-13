@@ -1,4 +1,4 @@
-package com.gosnow.app.recording.model
+package com.gosnow.app.ui.record
 
 import kotlinx.serialization.Serializable
 import java.util.UUID
@@ -13,5 +13,5 @@ data class SkiSession(
     val topSpeedKmh: Double,
     val avgSpeedKmh: Double,
     val verticalDropM: Int,
-    val resortId: Long? = null    // 后面如果要接雪场 ID，可以用
+    val resortId: Long? = null
 )

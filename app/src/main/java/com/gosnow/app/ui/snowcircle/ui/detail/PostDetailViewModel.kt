@@ -110,10 +110,20 @@ class PostDetailViewModel(
     }
 
     private fun buildThread(comments: List<Comment>): CommentThreadUiState {
-        val roots = comments.filter { it.parentId == null }
-        val children = comments.filter { it.parentId != null }.groupBy { it.parentId!! }
+
+        fun isRoot(c: Comment): Boolean {
+            val p = c.parentId?.trim()
+            return p.isNullOrBlank() || p == "0" || p.equals("null", ignoreCase = true)
+        }
+
+        val roots = comments.filter { isRoot(it) }
+        val children = comments
+            .filterNot { isRoot(it) }
+            .groupBy { it.parentId!!.trim() }
+
         return CommentThreadUiState(roots, children)
     }
+
 }
 
 private inline fun <T> MutableStateFlow<T>.update(block: (T) -> T) {

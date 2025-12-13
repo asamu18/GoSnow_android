@@ -1,26 +1,23 @@
-package com.gosnow.app.recording
+package com.gosnow.app.ui.record
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
+import android.app.Application
+import android.content.*
+import android.os.IBinder
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.gosnow.app.recording.model.SessionSummary
-import com.gosnow.app.ui.record.storage.FileSessionStore
+import com.gosnow.app.ui.record.classifier.MotionMode
+import com.gosnow.app.ui.record.service.ForegroundRecordingService
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.*
 
-class RecordingViewModel(
-    private val recorder: SessionRecorder,
-    private val store: FileSessionStore
-) : ViewModel() {
+class RecordingViewModel(app: Application) : AndroidViewModel(app) {
 
     var isRecording by mutableStateOf(false)
         private set
 
-    var durationText by mutableStateOf("00:00:00")
+    var durationText by mutableStateOf("00:00")
         private set
 
     var distanceKm by mutableStateOf(0.0)
@@ -32,101 +29,88 @@ class RecordingViewModel(
     var verticalDropM by mutableStateOf(0)
         private set
 
-    private var timerJob: Job? = null
-    private var sessionStartMillis: Long? = null
+    var motionMode by mutableStateOf(MotionMode.ACTIVE)
+        private set
 
-    /**
-     * UI 调用：点击“开始记录 / 结束记录”。
-     */
+    private var service: ForegroundRecordingService? = null
+    private var collectJob: Job? = null
+    private var bound = false
+
+    private val conn = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            val b = binder as? ForegroundRecordingService.LocalBinder ?: return
+            service = b.getService()
+            bound = true
+
+            collectJob?.cancel()
+            collectJob = viewModelScope.launch {
+                service!!.stateFlow.collect { s ->
+                    isRecording = s.isRecording
+                    distanceKm = s.distanceKm
+                    maxSpeedKmh = s.topSpeedKmh
+                    verticalDropM = s.verticalDropM
+                    motionMode = s.motionMode
+                    durationText = formatDuration(s.durationSec)
+                }
+            }
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            bound = false
+            service = null
+            collectJob?.cancel()
+            collectJob = null
+        }
+    }
+
+    fun bindService() {
+        if (bound) return
+        val ctx = getApplication<Application>()
+        val intent = Intent(ctx, ForegroundRecordingService::class.java)
+        ctx.bindService(intent, conn, Context.BIND_AUTO_CREATE)
+    }
+
+    fun unbindService() {
+        if (!bound) return
+        val ctx = getApplication<Application>()
+        runCatching { ctx.unbindService(conn) }
+        bound = false
+        service = null
+        collectJob?.cancel()
+        collectJob = null
+    }
+
     fun onToggleRecording() {
-        if (!isRecording) {
-            startRecording()
-        } else {
-            stopRecording()
-        }
+        if (!isRecording) startRecording() else stopRecording()
     }
 
-    private fun startRecording() {
-        recorder.start()
-        sessionStartMillis = System.currentTimeMillis()
-        isRecording = true
-
-        timerJob?.cancel()
-        timerJob = viewModelScope.launch {
-            while (isRecording) {
-                updateFromRecorder()
-                delay(1000L)
-            }
+    fun startRecording() {
+        val ctx = getApplication<Application>()
+        val intent = Intent(ctx, ForegroundRecordingService::class.java).apply {
+            action = ForegroundRecordingService.ACTION_START
         }
+        ContextCompat.startForegroundService(ctx, intent)
     }
 
-    private fun stopRecording() {
-        val session = recorder.stop()
-        isRecording = false
-        timerJob?.cancel()
-        timerJob = null
-
-        sessionStartMillis = null
-
-        session?.let { s ->
-            // 最终再刷新一次 UI
-            distanceKm = s.distanceKm
-            maxSpeedKmh = s.topSpeedKmh
-            verticalDropM = s.verticalDropM
-            durationText = formatDuration(s.durationSec)
-
-            // 异步存盘
-            viewModelScope.launch {
-                store.saveSession(s)
-            }
+    fun stopRecording() {
+        val ctx = getApplication<Application>()
+        val intent = Intent(ctx, ForegroundRecordingService::class.java).apply {
+            action = ForegroundRecordingService.ACTION_STOP
         }
-    }
-
-    private fun updateFromRecorder() {
-        // 时间用「现在 - start」保证和 iOS 一样：从点击开始起计时
-        val start = sessionStartMillis
-        val nowSec = if (start != null) {
-            ((System.currentTimeMillis() - start) / 1000L).toInt().coerceAtLeast(0)
-        } else {
-            0
-        }
-
-        durationText = formatDuration(nowSec)
-        distanceKm = recorder.distanceKm
-        maxSpeedKmh = recorder.topSpeedKmh
-        verticalDropM = recorder.verticalDropM
+        // 发一个 command 让 service 自己 stop
+        ctx.startService(intent)
     }
 
     private fun formatDuration(sec: Int): String {
         val h = sec / 3600
         val m = (sec % 3600) / 60
         val s = sec % 60
-        return if (h > 0) {
-            String.format("%d:%02d:%02d", h, m, s)
-        } else {
-            String.format("%02d:%02d", m, s)
-        }
+        return if (h > 0) String.format("%d:%02d:%02d", h, m, s)
+        else String.format("%02d:%02d", m, s)
     }
 
-    fun buildSummary(): SessionSummary? {
-        // 如果你之后想展示一个 Summary Sheet，可以直接用这个
-        if (sessionStartMillis != null || !isRecording) {
-            // 这里只是示意，实际你可能要从最近一次 session 读
-        }
-        return null
-    }
-
-    companion object {
-        fun provideFactory(
-            recorder: SessionRecorder,
-            store: FileSessionStore
-        ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST")
-            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                return RecordingViewModel(recorder, store) as T
-            }
-        }
+    override fun onCleared() {
+        super.onCleared()
+        unbindService()
     }
 }
-
-

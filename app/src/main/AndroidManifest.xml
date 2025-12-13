@@ -4,8 +4,18 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- 前台服务 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"
+        tools:ignore="ForegroundServicesPolicy" />
+    <!-- Android 14+ 前台“定位”类型 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
 
+    <!-- Android 13+ 通知权限（建议加，不然前台服务通知可能发不出来） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
+
+
+
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -32,6 +42,14 @@
             android:name=".ui.snowcircle.MainActivity"
             android:exported="false"
             android:label="Snow Circle" />
+
+
+        <!-- ✅ 前台记录服务 -->
+        <service
+            android:name=".ui.record.service.ForegroundRecordingService"
+            android:exported="false"
+            android:foregroundServiceType="location"
+            tools:ignore="MissingClass" />
     </application>
 
 </manifest>

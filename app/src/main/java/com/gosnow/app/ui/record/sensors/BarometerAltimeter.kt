@@ -7,16 +7,9 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import kotlin.math.pow
 
-/**
- * 用气压计计算“相对高度”（以开始记录那一刻为 0m）
- * - p0 = 开始时的气压
- * - altitude = 44330 * (1 - (p/p0)^0.1903)
- *
- * 注意：这是“相对高度”，非常适合算累计落差/爬升，且比 GPS altitude 稳。
- */
 class BarometerAltimeter(
     context: Context,
-    private val smoothAlpha: Float = 0.85f // 越大越平滑（0.8~0.9 推荐）
+    private val smoothAlpha: Float = 0.85f
 ) : SensorEventListener {
 
     private val sm = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -52,16 +45,10 @@ class BarometerAltimeter(
             p
         }
 
-        // 相对高度（m）
         val rawAlt = 44330f * (1f - (p / base).pow(0.1903f))
-
         val prev = _altitudeM
-        _altitudeM = if (prev == null) {
-            rawAlt
-        } else {
-            // 指数平滑（低通）
-            smoothAlpha * prev + (1f - smoothAlpha) * rawAlt
-        }
+
+        _altitudeM = if (prev == null) rawAlt else smoothAlpha * prev + (1f - smoothAlpha) * rawAlt
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}

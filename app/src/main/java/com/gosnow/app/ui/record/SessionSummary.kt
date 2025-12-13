@@ -1,4 +1,4 @@
-package com.gosnow.app.recording.model
+package com.gosnow.app.ui.record
 
 data class SessionSummary(
     val distanceKm: Double,

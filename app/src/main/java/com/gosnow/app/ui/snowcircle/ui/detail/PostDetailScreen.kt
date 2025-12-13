@@ -52,6 +52,9 @@ import androidx.compose.material.icons.outlined.Comment
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
@@ -287,9 +290,18 @@ private fun PostDetailContent(
                         onDelete = onDeleteComment,
                         onReport = onReport
                     )
+
                     val replies = comments.children[root.id].orEmpty()
+
+// 每条 root comment 自己一份展开状态（用 root.id 作为 key）
+                    val previewCount = 2
+                    var expanded by rememberSaveable(root.id) { mutableStateOf(false) }
+
                     Column(modifier = Modifier.padding(start = 32.dp)) {
-                        replies.take(3).forEach { reply ->
+
+                        val shownReplies = if (expanded) replies else replies.take(previewCount)
+
+                        shownReplies.forEach { reply ->
                             CommentRow(
                                 comment = reply,
                                 onReply = onReplyComment,
@@ -298,12 +310,21 @@ private fun PostDetailContent(
                                 onReport = onReport
                             )
                         }
-                        if (replies.size > 3) {
-                            TextButton(onClick = { /* TODO 展开更多 */ }) {
-                                Text("展开更多")
+
+                        if (replies.size > previewCount) {
+                            TextButton(
+                                onClick = { expanded = !expanded },
+                                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            ) {
+                                val hiddenCount = replies.size - previewCount
+                                Text(text = if (expanded) "收起回复" else "展开更多回复（$hiddenCount）")
                             }
+
                         }
                     }
+
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
