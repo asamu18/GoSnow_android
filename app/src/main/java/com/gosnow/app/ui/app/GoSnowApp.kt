@@ -4,9 +4,13 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -14,16 +18,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue // ✅ 修复 Property delegate 报错
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavDestination
-import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -57,9 +62,8 @@ import com.gosnow.app.ui.settings.ROUTE_FEEDBACK
 import com.gosnow.app.ui.settings.SettingsScreen
 import com.gosnow.app.ui.snowcircle.ui.SnowApp
 import com.gosnow.app.ui.stats.StatsScreen
-// ✅ 新增：导入更新相关的类 (确保你之前的 UpdateViewModel 和 UpdateDialog 文件已创建成功)
-import com.gosnow.app.ui.update.UpdateViewModel
 import com.gosnow.app.ui.update.UpdateNoticeDialog
+import com.gosnow.app.ui.update.UpdateViewModel
 import com.gosnow.app.ui.welcome.WelcomeFlowScreen
 
 // 常量定义
@@ -92,11 +96,13 @@ fun GoSnowApp() {
     val authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.provideFactory(context))
     val uiState by authViewModel.uiState.collectAsState()
 
-    // ✅ 新增：更新检查逻辑
     val updateViewModel: UpdateViewModel = viewModel()
     val updateNotice by updateViewModel.updateNotice.collectAsState()
 
     LaunchedEffect(uiState.isLoggedIn, hasSeenWelcome) {
+        // 如果还在检查 Session，不要执行任何跳转逻辑，防止乱跳
+        if (uiState.isCheckingSession) return@LaunchedEffect
+
         val targetRoute = when {
             !uiState.isLoggedIn -> WELCOME_AUTH_ROUTE
             !hasSeenWelcome -> WELCOME_FLOW_ROUTE
@@ -111,13 +117,11 @@ fun GoSnowApp() {
             }
         }
 
-        // ✅ 新增：登录成功后触发检查更新
         if (uiState.isLoggedIn) {
             updateViewModel.checkForUpdates()
         }
     }
 
-    // ✅ 新增：全局更新弹窗 (覆盖在 NavHost 之上)
     if (updateNotice != null) {
         UpdateNoticeDialog(
             notice = updateNotice!!,
@@ -125,54 +129,76 @@ fun GoSnowApp() {
         )
     }
 
-    NavHost(
-        navController = authNavController,
-        startDestination = WELCOME_AUTH_ROUTE
-    ) {
-        composable(WELCOME_AUTH_ROUTE) {
-            WelcomeAuthIntroScreen(
-                isCheckingSession = uiState.isCheckingSession,
-                onStartPhoneLogin = { authNavController.navigate(PHONE_LOGIN_ROUTE) },
-                onTermsClick = { authNavController.navigate(TERMS_ROUTE) }
-            )
+    // ✅ 修复启动闪烁：使用全屏 Loading 遮罩
+    // 只有当 isCheckingSession 为 false 时，才显示 NavHost
+    // 这样避免了 NavHost 先渲染登录页(默认页)再跳转主页造成的闪烁
+    if (uiState.isCheckingSession) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black), // 使用黑色背景，体验更像启动页
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = Color.White)
         }
-        composable(PHONE_LOGIN_ROUTE) {
-            PhoneLoginScreen(
-                uiState = uiState,
-                onPhoneChange = authViewModel::onPhoneChange,
-                onVerificationCodeChange = authViewModel::onVerificationCodeChange,
-                onSendCode = authViewModel::sendCode,
-                onLoginClick = authViewModel::verifyCodeAndLogin,
-                onBackClick = { authNavController.popBackStack() },
-                onTermsClick = { authNavController.navigate(TERMS_ROUTE) }
-            )
+    } else {
+        // ✅ 动态设置 startDestination
+        // 这样 NavHost 初始化时就会直接显示正确的页面，而不是先显示 Login 再跳转
+        val startDest = when {
+            !uiState.isLoggedIn -> WELCOME_AUTH_ROUTE
+            !hasSeenWelcome -> WELCOME_FLOW_ROUTE
+            else -> MAIN_ROUTE
         }
-        composable(TERMS_ROUTE) {
-            TermsScreen(onBackClick = { authNavController.popBackStack() })
-        }
-        composable(WELCOME_FLOW_ROUTE) {
-            WelcomeFlowScreen(
-                onFinished = {
-                    hasSeenWelcome = true
-                    prefs.edit().putBoolean("has_seen_welcome_v1", true).apply()
-                    authNavController.navigate(MAIN_ROUTE) {
-                        popUpTo(authNavController.graph.startDestinationId) { inclusive = true }
-                        launchSingleTop = true
+
+        NavHost(
+            navController = authNavController,
+            startDestination = startDest
+        ) {
+            composable(WELCOME_AUTH_ROUTE) {
+                WelcomeAuthIntroScreen(
+                    isCheckingSession = false, // 这里肯定是 false 了
+                    onStartPhoneLogin = { authNavController.navigate(PHONE_LOGIN_ROUTE) },
+                    onTermsClick = { authNavController.navigate(TERMS_ROUTE) }
+                )
+            }
+            composable(PHONE_LOGIN_ROUTE) {
+                PhoneLoginScreen(
+                    uiState = uiState,
+                    onPhoneChange = authViewModel::onPhoneChange,
+                    onVerificationCodeChange = authViewModel::onVerificationCodeChange,
+                    onSendCode = authViewModel::sendCode,
+                    onLoginClick = authViewModel::verifyCodeAndLogin,
+                    onBackClick = { authNavController.popBackStack() },
+                    onTermsClick = { authNavController.navigate(TERMS_ROUTE) }
+                )
+            }
+            composable(TERMS_ROUTE) {
+                TermsScreen(onBackClick = { authNavController.popBackStack() })
+            }
+            composable(WELCOME_FLOW_ROUTE) {
+                WelcomeFlowScreen(
+                    onFinished = {
+                        hasSeenWelcome = true
+                        prefs.edit().putBoolean("has_seen_welcome_v1", true).apply()
+                        authNavController.navigate(MAIN_ROUTE) {
+                            popUpTo(authNavController.graph.startDestinationId) { inclusive = true }
+                            launchSingleTop = true
+                        }
                     }
-                }
-            )
-        }
-        composable(MAIN_ROUTE) {
-            GoSnowMainApp(
-                onLogout = {
-                    authViewModel.logout()
-                    hasSeenWelcome = prefs.getBoolean("has_seen_welcome_v1", false)
-                    authNavController.navigate(WELCOME_AUTH_ROUTE) {
-                        popUpTo(authNavController.graph.startDestinationId) { inclusive = true }
-                        launchSingleTop = true
+                )
+            }
+            composable(MAIN_ROUTE) {
+                GoSnowMainApp(
+                    onLogout = {
+                        authViewModel.logout()
+                        hasSeenWelcome = prefs.getBoolean("has_seen_welcome_v1", false)
+                        authNavController.navigate(WELCOME_AUTH_ROUTE) {
+                            popUpTo(authNavController.graph.startDestinationId) { inclusive = true }
+                            launchSingleTop = true
+                        }
                     }
-                }
-            )
+                )
+            }
         }
     }
 }
@@ -202,12 +228,26 @@ fun GoSnowMainApp(
                     items = items,
                     currentRoute = currentRoute.orEmpty(),
                     onItemSelected = { item ->
+                        // ✅ 修复导航逻辑：
+                        // 如果点击的是“记录”（Home），我们需要特殊处理。
+                        // 如果当前不在“记录”的根页面（例如在 Settings/Profile 页面），
+                        // 我们需要【重置】状态，而不是【恢复】状态。
+                        // 恢复状态(restoreState=true)会导致把 Settings 页面又带回来，看起来像没跳转。
+
+                        val isSelectingRecord = item.route == BottomNavItem.Record.route
+                        val isCurrentlyAtRecordRoot = currentRoute == BottomNavItem.Record.route
+
+                        // 逻辑：如果点击的是记录，且当前不在记录首页 -> 强制不恢复状态（即重置回首页）
+                        // 其他情况（点击其他 Tab，或者在首页点首页） -> 保持默认行为（恢复状态）
+                        val shouldRestoreState = !(isSelectingRecord && !isCurrentlyAtRecordRoot)
+
                         navController.navigate(item.route) {
+                            // 弹出到图谱的起始点
                             popUpTo(navController.graph.startDestinationId) {
                                 saveState = true
                             }
                             launchSingleTop = true
-                            restoreState = true
+                            restoreState = shouldRestoreState
                         }
                     }
                 )
@@ -243,7 +283,7 @@ fun GoSnowMainApp(
                 }
             }
 
-            // 3. 雪圈
+            // 3. 雪圈 - 仅底部 Padding
             composable(BottomNavItem.Community.route) {
                 Box(
                     modifier = Modifier.padding(
@@ -255,7 +295,7 @@ fun GoSnowMainApp(
                 }
             }
 
-            // 4. 发现
+            // 4. 发现 - 仅底部 Padding
             composable(BottomNavItem.Discover.route) {
                 Box(
                     modifier = Modifier.padding(
@@ -271,7 +311,7 @@ fun GoSnowMainApp(
                 }
             }
 
-            // 5. 设置主页
+            // 5. 设置主页 (Profile) - 仅底部 Padding
             composable(PROFILE_ROUTE) {
                 Box(
                     modifier = Modifier.padding(
