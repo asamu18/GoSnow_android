@@ -16,7 +16,11 @@ data class MetricsConfig(
     val clampOvershootRatio: Double = 1.5,
 
     // 里程累加阈值
-    val minSpeedForDistanceKmh: Double = 0.8,
+    val minSpeedForDistanceKmh: Double = 2.5,
+
+    // ✅ 核心修改 2：新增最小位移阈值
+    // 如果两点之间距离小于 2 米，视为误差，不计入里程
+    val minDistanceStepM: Double = 2.0,
 
     // 落差抖动阈值
     val minVerticalChangeM: Double = 2.0,

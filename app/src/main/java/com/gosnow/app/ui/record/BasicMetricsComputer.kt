@@ -138,11 +138,14 @@ class BasicMetricsComputer(
 
         // 8) 里程：缆车/静止不计；低速不计
         if (!liftMode && prev != null && dtSec > 0.0 && smooth >= cfg.minSpeedForDistanceKmh) {
-            val stepKm = dm / 1000.0
+            if (dm >= cfg.minDistanceStepM){
+                val stepKm = dm / 1000.0
 
-            // 用 smooth 推导一个上限，防止偶发速度异常导致距离暴增
-            val maxBySmoothKm = (smooth / 3600.0) * dtSec * cfg.clampOvershootRatio
-            distanceKm += min(stepKm, maxBySmoothKm)
+                // 用 smooth 推导一个上限，防止偶发速度异常导致距离暴增
+                val maxBySmoothKm = (smooth / 3600.0) * dtSec * cfg.clampOvershootRatio
+                distanceKm += min(stepKm, maxBySmoothKm)
+            }
+
         }
 
         lastLocation = loc
