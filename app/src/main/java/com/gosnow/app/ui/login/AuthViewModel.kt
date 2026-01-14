@@ -138,7 +138,7 @@ class AuthViewModel(
         viewModelScope.launch {
             repository.signOut()
             CurrentUserStore.clear()
-            _uiState.update { LoginUiState(isCheckingSession = false) }
+            _uiState.update { LoginUiState(isCheckingSession = false,isLoggedIn = false) }
         }
     }
 

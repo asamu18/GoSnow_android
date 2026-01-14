@@ -99,8 +99,9 @@ fun GoSnowApp() {
     val updateViewModel: UpdateViewModel = viewModel()
     val updateNotice by updateViewModel.updateNotice.collectAsState()
 
+    // 监听状态变化，处理登录过期等情况
     LaunchedEffect(uiState.isLoggedIn, hasSeenWelcome) {
-        // 如果还在检查 Session，不要执行任何跳转逻辑，防止乱跳
+        // 如果正在检查 Session，什么都不做，防止乱跳
         if (uiState.isCheckingSession) return@LaunchedEffect
 
         val targetRoute = when {
@@ -109,8 +110,9 @@ fun GoSnowApp() {
             else -> MAIN_ROUTE
         }
 
+        // 只有当当前路由确实不匹配时才跳转，避免循环跳转
         val currentRoute = authNavController.currentDestination?.route
-        if (currentRoute != targetRoute) {
+        if (currentRoute != null && currentRoute != targetRoute) {
             authNavController.navigate(targetRoute) {
                 popUpTo(authNavController.graph.startDestinationId) { inclusive = true }
                 launchSingleTop = true
@@ -129,21 +131,20 @@ fun GoSnowApp() {
         )
     }
 
-    // ✅ 修复启动闪烁：使用全屏 Loading 遮罩
-    // 只有当 isCheckingSession 为 false 时，才显示 NavHost
-    // 这样避免了 NavHost 先渲染登录页(默认页)再跳转主页造成的闪烁
+    // ✅ 核心修复 1：启动逻辑优化
+    // 如果正在检查 Session，只显示一个黑色背景的 Loading
+    // 这样用户就不会看到“登录页一闪而过”了
     if (uiState.isCheckingSession) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black), // 使用黑色背景，体验更像启动页
+                .background(Color.Black), // 黑色背景，看起来像启动屏的延续
             contentAlignment = Alignment.Center
         ) {
             CircularProgressIndicator(color = Color.White)
         }
     } else {
-        // ✅ 动态设置 startDestination
-        // 这样 NavHost 初始化时就会直接显示正确的页面，而不是先显示 Login 再跳转
+        // 检查完毕，决定起始页
         val startDest = when {
             !uiState.isLoggedIn -> WELCOME_AUTH_ROUTE
             !hasSeenWelcome -> WELCOME_FLOW_ROUTE
@@ -156,7 +157,7 @@ fun GoSnowApp() {
         ) {
             composable(WELCOME_AUTH_ROUTE) {
                 WelcomeAuthIntroScreen(
-                    isCheckingSession = false, // 这里肯定是 false 了
+                    isCheckingSession = false,
                     onStartPhoneLogin = { authNavController.navigate(PHONE_LOGIN_ROUTE) },
                     onTermsClick = { authNavController.navigate(TERMS_ROUTE) }
                 )
@@ -216,8 +217,7 @@ fun GoSnowMainApp(
     )
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = navBackStackEntry?.destination
-    val currentRoute = currentDestination?.route
+    val currentRoute = navBackStackEntry?.destination?.route
 
     val shouldShowBottomBar = currentRoute != RECORD_ROUTE
 
@@ -228,22 +228,21 @@ fun GoSnowMainApp(
                     items = items,
                     currentRoute = currentRoute.orEmpty(),
                     onItemSelected = { item ->
-                        // ✅ 修复导航逻辑：
-                        // 如果点击的是“记录”（Home），我们需要特殊处理。
-                        // 如果当前不在“记录”的根页面（例如在 Settings/Profile 页面），
-                        // 我们需要【重置】状态，而不是【恢复】状态。
-                        // 恢复状态(restoreState=true)会导致把 Settings 页面又带回来，看起来像没跳转。
+                        // ✅ 核心修复 2：底部导航点击逻辑
 
                         val isSelectingRecord = item.route == BottomNavItem.Record.route
                         val isCurrentlyAtRecordRoot = currentRoute == BottomNavItem.Record.route
 
-                        // 逻辑：如果点击的是记录，且当前不在记录首页 -> 强制不恢复状态（即重置回首页）
-                        // 其他情况（点击其他 Tab，或者在首页点首页） -> 保持默认行为（恢复状态）
+                        // 逻辑解释：
+                        // 如果点击的是“记录(Home)”图标，并且当前不在“记录”的根页面（例如正在“设置/Profile”页面），
+                        // 我们需要强制【重置】回记录页，而不是【恢复】设置页的状态。
+                        // 如果 restoreState 为 true，系统会把你带回 Settings 页，导致点击看起来没反应。
+
                         val shouldRestoreState = !(isSelectingRecord && !isCurrentlyAtRecordRoot)
 
                         navController.navigate(item.route) {
                             // 弹出到图谱的起始点
-                            popUpTo(navController.graph.startDestinationId) {
+                            popUpTo(navController.graph.findStartDestination().id) {
                                 saveState = true
                             }
                             launchSingleTop = true
@@ -257,7 +256,7 @@ fun GoSnowMainApp(
         NavHost(
             navController = navController,
             startDestination = BottomNavItem.Record.route,
-            modifier = Modifier // 移除全局 padding
+            modifier = Modifier // 移除全局 padding，由各页面自行处理
         ) {
             // 1. 记录首页
             composable(BottomNavItem.Record.route) {
@@ -283,7 +282,7 @@ fun GoSnowMainApp(
                 }
             }
 
-            // 3. 雪圈 - 仅底部 Padding
+            // 3. 雪圈 - 仅底部 Padding，解决顶部白边
             composable(BottomNavItem.Community.route) {
                 Box(
                     modifier = Modifier.padding(
@@ -295,7 +294,7 @@ fun GoSnowMainApp(
                 }
             }
 
-            // 4. 发现 - 仅底部 Padding
+            // 4. 发现 - 仅底部 Padding，解决顶部白边
             composable(BottomNavItem.Discover.route) {
                 Box(
                     modifier = Modifier.padding(
@@ -330,7 +329,7 @@ fun GoSnowMainApp(
                 }
             }
 
-            // 6. 全屏录制页
+            // 6. 全屏录制页 - 不加 padding
             composable(RECORD_ROUTE) {
                 RecordRoute(onBack = { navController.popBackStack() })
             }
