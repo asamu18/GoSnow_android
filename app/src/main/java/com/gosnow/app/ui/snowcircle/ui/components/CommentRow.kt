@@ -28,12 +28,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.Color
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.gosnow.app.ui.snowcircle.model.Comment
-import androidx.compose.material.icons.automirrored.outlined.Comment
-
+import com.gosnow.app.util.getResizedImageUrl
 
 @Composable
 fun CommentRow(
@@ -44,6 +44,10 @@ fun CommentRow(
     onReport: (Comment) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // ✅ 修改：为了避免命名冲突，直接在这里获取 LocalContext.current
+    // 或者将变量名改为 ctx/localContext，这里直接使用 LocalContext.current 传给 Coil
+    val localContext = LocalContext.current
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -51,15 +55,23 @@ fun CommentRow(
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.Top
     ) {
+        // 头像
         AsyncImage(
-            model = comment.author.avatarUrl,
+            // ✅ 修复：这里使用 localContext，避免编译器混淆
+            model = ImageRequest.Builder(localContext)
+                .data(getResizedImageUrl(comment.author.avatarUrl, width = 80) ?: comment.author.avatarUrl)
+                .crossfade(true)
+                .placeholder(android.R.color.darker_gray)
+                .build(),
             contentDescription = null,
             modifier = Modifier
                 .size(36.dp)
                 .clip(CircleShape),
             contentScale = ContentScale.Crop
         )
+
         Spacer(modifier = Modifier.width(8.dp))
+
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -140,7 +152,6 @@ fun CommentRow(
                     )
                 }
             }
-
         }
     }
 }

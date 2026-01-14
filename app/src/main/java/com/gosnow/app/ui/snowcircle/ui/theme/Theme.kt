@@ -15,6 +15,7 @@ private val LightColors = lightColorScheme(
     error = SnowError
 )
 
+// 虽然定义了深色，但我们不再使用它
 private val DarkColors = darkColorScheme(
     primary = SnowPrimary,
     secondary = SnowSecondary,
@@ -25,7 +26,10 @@ private val DarkColors = darkColorScheme(
 
 @Composable
 fun SnowTheme(content: @Composable () -> Unit) {
-    val colors = if (isSystemInDarkTheme()) DarkColors else LightColors
+    // ✅ 修改：直接强制使用 LightColors，忽略系统设置
+    // val colors = if (isSystemInDarkTheme()) DarkColors else LightColors
+    val colors = LightColors
+
     MaterialTheme(
         colorScheme = colors,
         typography = androidx.compose.material3.Typography(),

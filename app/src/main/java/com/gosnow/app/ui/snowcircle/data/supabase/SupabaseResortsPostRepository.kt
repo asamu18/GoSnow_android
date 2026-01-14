@@ -14,6 +14,7 @@ import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.storage.storage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.gosnow.app.util.loadAndCompressImage
 
 
 
@@ -149,9 +150,9 @@ class SupabaseResortsPostRepository(
         if (uris.isNotEmpty()) {
             val rows = mutableListOf<PostImageInsert>()
             uris.forEachIndexed { index, uri ->
-                val ext = guessExt(uri)
+                val ext = "jpg" // 压缩后统一变成 jpg
                 val path = "${currentUser.id}/${inserted.id}/${System.currentTimeMillis()}_${index}.${ext}"
-                val bytes = readBytes(uri)
+                val bytes = loadAndCompressImage(context, uri, maxSize = 1080)
                 // upload
                 supabase.storage.from(postMediaBucket).upload(path, bytes, upsert = true)
                 val url = buildPublicUrl(path)

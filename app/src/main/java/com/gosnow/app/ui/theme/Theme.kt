@@ -35,14 +35,15 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun GosnowTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = false,
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            // 2. 即使开启动态取色，也强制使用 浅色(Light) 的动态色
+            dynamicLightColorScheme(context)
         }
 
         darkTheme -> DarkColorScheme

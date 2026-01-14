@@ -39,7 +39,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.ui.platform.LocalContext
 import com.gosnow.app.ui.snowcircle.model.Post
+import com.gosnow.app.util.getResizedImageUrl
 
 @Composable
 fun PostCard(
@@ -105,9 +108,15 @@ private fun PostHeader(
     onDeleteClick: () -> Unit,
     onReportClick: () -> Unit
 ) {
+    val context = LocalContext.current
     Row(verticalAlignment = Alignment.CenterVertically) {
         AsyncImage(
-            model = post.author.avatarUrl,
+            model = ImageRequest.Builder(context)
+                .data(getResizedImageUrl(post.author.avatarUrl, width = 100) ?: post.author.avatarUrl)
+                .crossfade(true) // 优化 2: 开启淡入动画，消除闪烁感
+                .placeholder(android.R.color.darker_gray) // 优化 3: 加载占位色
+                .error(android.R.color.darker_gray)       // 错误占位
+                .build(),
             contentDescription = null,
             modifier = Modifier
                 .size(40.dp)
@@ -207,9 +216,20 @@ private fun ActionPill(
 fun ImageGrid(urls: List<String>, onImageClick: (Int) -> Unit) {
     // 简化版实现，防止依赖丢失，你可以用你之前的复杂版
     if (urls.isEmpty()) return
-    val displayUrl = urls.first()
+    val context = LocalContext.current
+    // 我们只展示第一张图作为预览 (根据你之前的简化版逻辑)
+    // 实际项目中如果是九宫格，对每张图都要应用这个逻辑
+    val originalUrl = urls.first()
+    // 列表显示时，请求 600px 宽度的图足够清晰了，体积却小很多
+    val displayModel = ImageRequest.Builder(context)
+        .data(getResizedImageUrl(originalUrl, width = 600) ?: originalUrl)
+        .crossfade(true)
+        .size(600, 600)
+        .precision(coil.size.Precision.INEXACT)
+        .placeholder(android.R.color.darker_gray) // 建议换成稍微好看点的灰色 Color(0xFFEEEEEE)
+        .build()
     AsyncImage(
-        model = displayUrl,
+        model = displayModel,
         contentDescription = null,
         contentScale = ContentScale.Crop,
         modifier = Modifier
