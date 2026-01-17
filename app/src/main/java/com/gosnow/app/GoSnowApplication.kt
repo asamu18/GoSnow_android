@@ -14,7 +14,7 @@ class GoSnowApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         SupabaseClientProvider.init(this)
-        SupabaseClientProvider.supabaseClient
+        //SupabaseClientProvider.supabaseClient
     }
 
     // ✅ 配置全局 Coil 图片加载器

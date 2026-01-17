@@ -7,6 +7,7 @@ import io.github.jan.supabase.annotations.SupabaseInternal
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.gotrue.Auth
 import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.realtime.Realtime // ✅ 新增导入
 import io.github.jan.supabase.storage.Storage
 import io.ktor.client.engine.android.Android
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -44,6 +45,9 @@ object SupabaseClientProvider {
                 install(Postgrest)
                 install(Storage)
 
+                // ✅ 核心修复：安装 Realtime 插件
+                install(Realtime)
+
                 httpConfig {
                     install(ContentNegotiation) {
                         json(
@@ -62,7 +66,6 @@ object SupabaseClientProvider {
 
                 httpEngine = Android.create()
             }
-
         }
     }
 }

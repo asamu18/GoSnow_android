@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import io.github.jan.supabase.gotrue.auth
 
 data class LoginUiState(
     val phoneNumber: String = "",
@@ -37,19 +38,39 @@ class AuthViewModel(
 
     private fun checkExistingSession() {
         viewModelScope.launch {
-            val hasSession = repository.hasActiveSession().getOrNull() == true
+            val auth = SupabaseClientProvider.supabaseClient.auth
 
-            if (hasSession) {
+            // 1. 先尝试从本地存储拿现有的 Session（不联网）
+            val currentSession = auth.currentSessionOrNull()
+
+            if (currentSession != null) {
+                // 如果本地有 Session，先假设它是有效的，让用户先进主页
+                _uiState.update { it.copy(isLoggedIn = true, isCheckingSession = false) }
+
+                // 后台异步刷新 Token，不干扰用户进入主页
+                launch {
+                    runCatching { auth.refreshCurrentSession() }.onFailure {
+                        // 如果由于网络原因刷新失败，不要强制登出，等下次有网再说
+                        // 如果是因为 Token 彻底非法（401），则在拦截器层面处理
+                    }
+                }
+
+                // 同步用户信息
                 runCatching { CurrentUserStore.refreshFromServer() }
-            }
 
-            _uiState.update {
-                it.copy(
-                    isLoggedIn = hasSession,
-                    isCheckingSession = false,
-                    errorMessage = null,
-                    successMessage = null
-                )
+            } else {
+                // 2. 如果本地彻底没有 Session，才尝试强制刷新一次
+                val refreshedSession = runCatching {
+                    auth.refreshCurrentSession()
+                    auth.currentSessionOrNull()
+                }.getOrNull()
+
+                _uiState.update {
+                    it.copy(
+                        isLoggedIn = refreshedSession != null,
+                        isCheckingSession = false
+                    )
+                }
             }
         }
     }

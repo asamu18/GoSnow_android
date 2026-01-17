@@ -4,19 +4,17 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.2.21"
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
     namespace = "com.gosnow.app"
-    compileSdk {
-        version = release(36)
-    }
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.gosnow.app"
         minSdk = 31
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 2
         versionName = "1.0.1"
 
@@ -114,7 +112,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.foundation.layout)
     // 以后需要再加：
-    // implementation("io.github.jan-tennert.supabase:realtime-kt")
+    implementation("io.github.jan-tennert.supabase:realtime-kt")
     // implementation("io.github.jan-tennert.supabase:functions-kt")
 
     // 5. Ktor（跟 2.4.0 兼容的版本）
@@ -148,6 +146,8 @@ dependencies {
 
     // JSON 序列化
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    // 如果没有请加上，这个库通常随 supabase-kt 自动引入，但显式加上更稳
+    implementation("com.russhwolf:multiplatform-settings-no-arg:1.1.1")
 
     // ---------- 测试 ----------
     testImplementation(libs.junit)
@@ -159,3 +159,14 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
+// 强制全局分辨率策略：无视所有库的请求，强行降级 core 和 core-ktx 到 1.15.0
+configurations.all {
+    resolutionStrategy {
+        eachDependency {
+            if (requested.group == "androidx.core" && (requested.name == "core" || requested.name == "core-ktx")) {
+                useVersion("1.15.0")
+                because("Force downgrade from 1.17.0 (API 36) to 1.15.0 (API 35) to fix build error")
+            }
+        }
+    }
+}

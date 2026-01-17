@@ -1,7 +1,7 @@
 [versions]
-agp = "8.13.1"
-kotlin = "2.2.21"
-coreKtx = "1.10.1"
+agp = "8.7.3"
+kotlin = "2.1.0"
+coreKtx = "1.15.1"
 junit = "4.13.2"
 junitVersion = "1.1.5"
 espressoCore = "3.5.1"
@@ -20,7 +20,10 @@ roomKtx = "2.8.4"
 foundationLayoutVersion = "1.10.0"
 
 [libraries]
-androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+# 修改这一行，添加 strictly 约束
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version = { strictly = "1.15.0" } }
+# 补充这一行，防止 core 库单独溜进来
+androidx-core = { group = "androidx.core", name = "core", version = { strictly = "1.15.0" } }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
@@ -47,6 +50,9 @@ androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = 
 androidx-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout", version.ref = "foundationLayoutVersion" }
 
 [plugins]
+# 在 [plugins] 块中添加下面这一行，为序列化插件定义别名
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+# 请确保已有的插件也使用了上面的版本引用
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
