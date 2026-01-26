@@ -67,21 +67,20 @@ class RecordingViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             srv.onLocationUpdate = { loc, speedKmh ->
-                // 🔴 调试点：看位置有没有流到这一步
-                Log.d("TrackDebug", "收到Service位置: ${loc.latitude}, 录制中: ${srv.stateFlow.value.isRecording}")
+                // ✅ 核心修改：逻辑拆分
+
+                // 1. 只有“录制中”才记录轨迹数据
                 if (srv.stateFlow.value.isRecording) {
-                    // 1. 喂给轨迹引擎
                     trackController.addPoint(loc, speedKmh)
-
-                    // 2. ✅ 核心修正：增加计数，强制让 UI 看到变化
-                    trackUpdateTick++
-
-                    // 3. 喂给小队
-                    partyManager.onMyLocationUpdate(loc)
-
-                    // 4. 强制打印日志，方便你在 Logcat 验证
-                    Log.d("TrackDebug", "收到位置 [${trackUpdateTick}]: ${loc.latitude}, ${loc.longitude}")
                 }
+
+                // 2. ✅ 无论是否录制，都强制刷新 UI 计数器 (为了让地图重绘当前位置和队友)
+                trackUpdateTick++
+
+                // 3. ✅ 无论是否录制，都向小队广播我的位置 (只要我加入了小队)
+                partyManager.onMyLocationUpdate(loc)
+
+                Log.d("TrackDebug", "收到位置 [${trackUpdateTick}]: ${loc.latitude}, ${loc.longitude}")
             }
         }
 

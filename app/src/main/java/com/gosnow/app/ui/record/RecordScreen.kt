@@ -67,6 +67,8 @@ import com.mapbox.maps.viewannotation.viewAnnotationOptions
 import com.mapbox.maps.ViewAnnotationAnchor// 👈 确保这个类能被索引到
 import com.mapbox.maps.viewannotation.geometry
 import com.mapbox.maps.viewannotation.annotationAnchor // 👈 v11 的 DSL 扩展名是这个
+import com.mapbox.maps.extension.style.sources.generated.GeoJsonSource
+import com.mapbox.maps.extension.style.sources.getSourceAs
 
 
 // 以及其他原有导入
@@ -154,6 +156,20 @@ fun RecordScreen(
                 update = { mapView ->
                     // 强制刷新标记
                     val tick = viewModel.trackUpdateTick
+                    // =================================================
+                    // ✅ 1. 修复滑行轨迹 (新增代码)
+                    // =================================================
+                    val style = mapView.mapboxMap.getStyle()
+                    if (style != null) {
+                        val (greenData, orangeData) = viewModel.trackController.getGeoJsonData()
+
+                        // 更新绿色轨迹源 (慢速/普通)
+                        style.getSourceAs<GeoJsonSource>("source-green")?.featureCollection(greenData)
+
+                        // 更新橙色轨迹源 (快速)
+                        style.getSourceAs<GeoJsonSource>("source-orange")?.featureCollection(orangeData)
+                    }
+                    // =================================================
                     val vaManager = mapView.viewAnnotationManager
                     val currentState = partyState
 

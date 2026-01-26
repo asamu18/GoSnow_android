@@ -1184,7 +1184,7 @@ import io.github.jan.supabase.gotrue.Auth
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.realtime.Realtime // ✅ 新增导入
 import io.github.jan.supabase.storage.Storage
-import io.ktor.client.engine.android.Android
+import io.ktor.client.engine.cio.CIO // ✅ 新增
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.accept
@@ -1246,7 +1246,8 @@ object SupabaseClientProvider {
                     }
                 }
 
-                httpEngine = Android.create()
+                // ✅ 核心修改：将 httpEngine 改为 CIO
+                httpEngine = CIO.create()
             }
         }
     }
@@ -6321,28 +6322,25 @@ import com.mapbox.maps.extension.style.layers.properties.generated.LineCap
 import com.mapbox.maps.extension.style.layers.properties.generated.LineJoin
 import com.mapbox.maps.extension.style.sources.addSource
 import com.mapbox.maps.extension.style.sources.generated.geoJsonSource
-import com.mapbox.maps.extension.style.sources.getSourceAs
-import com.mapbox.maps.extension.style.sources.generated.GeoJsonSource
 // ✅ Mapbox v11 ViewAnnotation 核心导入
 import com.mapbox.geojson.Point
 // ✅ 引入 DSL 构建函数
 // 建议删除旧的 viewannotation 相关引用，只保留下面这些：
 import com.mapbox.maps.viewannotation.viewAnnotationOptions // DSL构建函数
-import com.mapbox.maps.viewannotation.ViewAnnotationManager
 import com.mapbox.maps.viewannotation.geometry             // DSL属性
-import com.mapbox.maps.viewannotation.annotationAnchor     // DSL属性
 import coil.transform.CircleCropTransformation // 图片裁剪
-import android.view.LayoutInflater
 import android.widget.ImageView
 import com.gosnow.app.R
 import coil.load
 import androidx.compose.foundation.shape.CircleShape
+import android.view.ViewGroup
+import android.widget.FrameLayout
+// ✅ Mapbox 核心 ViewAnnotation 导入
 import com.mapbox.maps.viewannotation.viewAnnotationOptions
-import androidx.compose.ui.viewinterop.AndroidView
-// ✅ 解决 ViewAnnotation 报错的 4 个关键导入
-import com.mapbox.maps.viewannotation.viewAnnotationOptions
+import com.mapbox.maps.ViewAnnotationAnchor// 👈 确保这个类能被索引到
 import com.mapbox.maps.viewannotation.geometry
-import com.mapbox.maps.viewannotation.annotationAnchor
+import com.mapbox.maps.viewannotation.annotationAnchor // 👈 v11 的 DSL 扩展名是这个
+
 
 // 以及其他原有导入
 
@@ -6398,23 +6396,17 @@ fun RecordScreen(
     requestPermissions: () -> Unit
 ) {
     val context = LocalContext.current
-    // ✅ 新增：控制小队面板显示的变量
     var showPartySheet by remember { mutableStateOf(false) }
     val partyState by viewModel.partyState.collectAsState()
-    // 增加一个调试文本，直接显示在屏幕上（测试完删掉）
-    //Text("当前成员数: ${(partyState as? PartyState.Joined)?.members?.size ?: 0}", color = Color.Red)
 
+    // 调试日志：直接在 UI 上打印当前队友数量，确认数据层是否工作
+    val debugMemberCount = (partyState as? PartyState.Joined)?.members?.size ?: 0
+    val debugMembers = (partyState as? PartyState.Joined)?.members ?: emptyList()
 
-    // 监听小队反馈事件
-    LaunchedEffect(viewModel.partyManager) {
-        viewModel.partyManager.statusEvent.collect { message ->
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-        }
-    }
+    // 缓存 ViewAnnotation 对应的 View，避免重复创建
     val markerViews = remember { mutableMapOf<String, android.view.View>() }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 地图
         if (!hasLocationPermission) {
             Box(modifier = Modifier.fillMaxSize().background(Color(0xFFF2F2F7)), contentAlignment = Alignment.Center) {
                 Text("需要定位权限以显示地图", color = Color.Gray)
@@ -6424,6 +6416,7 @@ fun RecordScreen(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
                     MapView(ctx).apply {
+                        // 你的 Style URL
                         mapboxMap.loadStyle("mapbox://styles/gosnow/cmikjh06p00ys01s68fmy9nor") { style ->
                             location.updateSettings { enabled = true; pulsingEnabled = true }
                             viewport.transitionTo(viewport.makeFollowPuckViewportState(), viewport.makeImmediateViewportTransition())
@@ -6432,123 +6425,120 @@ fun RecordScreen(
                     }
                 },
                 update = { mapView ->
-                    val forceRefresh = viewModel.trackUpdateTick
-                    // 1. 更新轨迹线
-                    // 不再判定 isRecording，只要 tick 动了就画，这样即便是暂停状态也能保留线
-                    val (green, orange) = viewModel.trackController.getGeoJsonData()
-                    mapView.mapboxMap.getStyle { style ->
-                        style.getSourceAs<GeoJsonSource>("source-green")?.featureCollection(green)
-                        style.getSourceAs<GeoJsonSource>("source-orange")?.featureCollection(orange)
-                    }
-                    // 2. ✅ 修正后的队友点位同步 (适配 Mapbox v11)
+                    // 强制刷新标记
+                    val tick = viewModel.trackUpdateTick
                     val vaManager = mapView.viewAnnotationManager
                     val currentState = partyState
 
                     if (currentState is PartyState.Joined) {
                         val currentMembers = currentState.members
-                        val currentMemberIds = currentMembers.map { it.userId }.toSet()
+                        val currentIds = currentMembers.map { it.userId }.toSet()
 
-                        // ✅ 【关键修正 2】Map 遍历删除的正确写法
-                        val iterator = markerViews.entries.iterator() // 注意是 entries.iterator()
+                        // 1. 删除已离开的队友
+                        val iterator = markerViews.entries.iterator()
                         while (iterator.hasNext()) {
                             val entry = iterator.next()
-                            if (!currentMemberIds.contains(entry.key)) {
+                            if (!currentIds.contains(entry.key)) {
                                 vaManager.removeViewAnnotation(entry.value)
                                 iterator.remove()
                             }
                         }
 
-                        // 2. 【新增/更新】
+                        // 2. 添加或更新队友
                         currentMembers.forEach { member ->
-                            val existingView = markerViews[member.userId]
+                            // 过滤非法坐标 (0,0 在非洲，显示出来也没用)
+                            if (member.lat != 0.0 && member.lon != 0.0) {
+                                val existingView = markerViews[member.userId]
+                                val point = Point.fromLngLat(member.lon, member.lat)
 
-                            if (existingView == null) {
-                                // --- 创建新 Marker ---
-                                val imageView = ImageView(context).apply {
-                                    layoutParams = android.view.ViewGroup.LayoutParams(120, 120) // 稍微大一点
-                                    setPadding(10, 10, 10, 10) // 增加点击区域或边距
-                                    // 加个白色背景圈，让头像更明显
-                                    background = ContextCompat.getDrawable(context, R.drawable.ic_launcher_background)
-                                    clipToOutline = true
+                                if (existingView == null) {
+                                    // --- 创建新 View ---
+                                    // 使用 FrameLayout 包裹圆形图片，更容易控制大小
+                                    val container = FrameLayout(context).apply {
+                                        layoutParams = ViewGroup.LayoutParams(80, 80) // 确保有大小！
 
-                                    load(member.avatarUrl) {
-                                        crossfade(true)
-                                        placeholder(R.drawable.ic_launcher_foreground) // 确保有占位图
-                                        transformations(CircleCropTransformation())
+                                        clipToOutline = true
                                     }
-                                }
 
-                                val addOptions = viewAnnotationOptions {
-                                    geometry(Point.fromLngLat(member.lon, member.lat))
-                                    allowOverlap(true)
-                                }
+                                    val imageView = ImageView(context).apply {
+                                        layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                                        scaleType = ImageView.ScaleType.CENTER_CROP
+                                        load(member.avatarUrl) {
+                                            crossfade(true)
+                                            placeholder(R.drawable.ic_launcher_foreground)
+                                            error(R.drawable.ic_launcher_foreground) // 错误时显示
+                                            transformations(CircleCropTransformation())
+                                        }
+                                    }
+                                    container.addView(imageView)
 
-                                vaManager.addViewAnnotation(imageView, addOptions)
-                                markerViews[member.userId] = imageView // 存入缓存
-                            } else {
-                                // --- 更新位置 ---
-                                val updateOptions = viewAnnotationOptions {
-                                    geometry(Point.fromLngLat(member.lon, member.lat))
+                                    // 添加到地图
+                                    val options = viewAnnotationOptions {
+                                        geometry(point)
+                                        allowOverlap(true) // 允许重叠，防止被自己的位置遮挡
+                                        // ✅ v11 使用 annotationAnchor
+                                        annotationAnchor {
+                                            anchor(ViewAnnotationAnchor.CENTER)
+                                        }
+                                        // 或者简写版（取决于具体扩展包版本）：
+                                        // annotationAnchor(ViewAnnotationAnchor.CENTER)
+                                    }
+                                    vaManager.addViewAnnotation(container, options)
+                                    markerViews[member.userId] = container
+                                } else {
+                                    // --- 更新位置 ---
+                                    val options = viewAnnotationOptions {
+                                        geometry(point)
+                                    }
+                                    vaManager.updateViewAnnotation(existingView, options)
                                 }
-                                vaManager.updateViewAnnotation(existingView, updateOptions)
                             }
                         }
                     } else {
-                        // 退出小队，清空所有
                         if (markerViews.isNotEmpty()) {
                             vaManager.removeAllViewAnnotations()
                             markerViews.clear()
                         }
                     }
                 }
-
             )
-            // ✅ 建议位置：在第 135 行（即 AndroidView 下方）插入
-            val partyState by viewModel.partyState.collectAsState()
+        }
 
 
-            Column(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+
+        // --- 右侧按钮栏 ---
+        Column(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            FloatingActionButton(
+                onClick = { showPartySheet = true },
+                containerColor = if (partyState is PartyState.Joined) Color(0xFFC6FF3F) else Color(0xCC000000),
+                contentColor = if (partyState is PartyState.Joined) Color.Black else Color.White,
+                shape = CircleShape,
+                modifier = Modifier.size(48.dp)
             ) {
-                // 小队入口按钮
-                FloatingActionButton(
-                    onClick = {
-                        android.util.Log.d("PartyUI", "点击了小队按钮") // ✅ 添加此行用于测试
-                        showPartySheet = true
-                    },
-                    containerColor = if (partyState is PartyState.Joined) Color(0xFFC6FF3F) else Color(0xCC000000),
-                    contentColor = if (partyState is PartyState.Joined) Color.Black else Color.White,
-                    shape = CircleShape,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        imageVector = if (partyState is PartyState.Joined) Icons.Default.Groups else Icons.Default.PersonAdd,
-                        contentDescription = "小队",
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-
-                // 这里可以预留你 iOS 需求里的 3D 或 轨迹开关按钮
+                Icon(
+                    imageVector = if (partyState is PartyState.Joined) Icons.Default.Groups else Icons.Default.PersonAdd,
+                    contentDescription = "小队",
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
 
-        // --- 小队面板 ---
-
-
-        // 返回按钮
+        // --- 下方：返回按钮、数据面板等 (保持原样) ---
         IconButton(
             onClick = onBack,
             modifier = Modifier.padding(16.dp).align(Alignment.TopStart).background(Color(0x66000000), RoundedCornerShape(999.dp))
         ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", tint = Color.White) }
 
-        // 状态徽章 (右上角)
         MotionModeBadge(viewModel.isRecording, viewModel.motionMode, hasLocationPermission, hasFineLocation, Modifier.padding(top = 16.dp, end = 16.dp).align(Alignment.TopEnd))
 
-        // 底部数据面板
+        // 底部数据面板 (简写，保持原样)
         Surface(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().shadow(16.dp), color = Color.White, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
+            // ... (复制你之前的 StatCard 内容，这里省略以节省空间，只展示逻辑) ...
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp)) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.AccessTime, null, tint = Color(0xFF8E8E93))
@@ -6574,27 +6564,21 @@ fun RecordScreen(
                 }
             }
         }
-        // ✅ 1. 在 RecordScreen 开头定义 Sheet 状态
-        val sheetState = rememberModalBottomSheetState()
 
-// ✅ 2. 在 Box 布局的最末尾添加 BottomSheet 逻辑
+        // --- Bottom Sheet ---
+        val sheetState = rememberModalBottomSheetState()
         if (showPartySheet) {
             ModalBottomSheet(
                 onDismissRequest = { showPartySheet = false },
                 sheetState = sheetState,
-                dragHandle = { BottomSheetDefaults.DragHandle() },
-                containerColor = Color(0xFF1C1C1E) // 深色背景，对齐 iOS 风格
+                containerColor = Color(0xFF1C1C1E)
             ) {
-                // 调用下方定义的专门组件
-//                PartySheetContent(
-//                    viewModel = viewModel,
-//                    onDismiss = { showPartySheet = false }
-//                )
+                PartySheetContent(
+                    viewModel = viewModel,
+                    onDismiss = { showPartySheet = false }
+                )
             }
         }
-
-        // 加入小队弹窗
-
     }
 }
 
@@ -6636,114 +6620,114 @@ private fun MotionModeBadge(isRecording: Boolean, mode: MotionMode, hasPerm: Boo
 }
 
 @Composable
-//fun PartySheetContent(
-//    viewModel: RecordingViewModel,
-//    onDismiss: () -> Unit
-//) {
-//    val context = LocalContext.current
-//    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
-//    val partyState by viewModel.partyState.collectAsState()
-//    var joinCodeInput by remember { mutableStateOf("") }
-//
-//    Column(
-//        modifier = Modifier
-//            .fillMaxWidth()
-//            .padding(horizontal = 24.dp)
-//            .padding(bottom = 40.dp),
-//        horizontalAlignment = Alignment.CenterHorizontally
-//    ) {
-//        when (val s = partyState) {
-//            is PartyState.Idle -> {
-//                Text("尚未加入小队", color = Color.White, style = MaterialTheme.typography.titleMedium)
-//                Spacer(Modifier.height(24.dp))
-//
-//                // 创建按钮
-//                Button(
-//                    onClick = { viewModel.partyManager.createParty() },
-//                    modifier = Modifier.fillMaxWidth(),
-//                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-//                    shape = RoundedCornerShape(12.dp)
-//                ) {
-//                    Text("创建新小队", color = Color.Black)
-//                }
-//
-//                Spacer(Modifier.height(16.dp))
-//                Text("或", color = Color.Gray, fontSize = 12.sp)
-//                Spacer(Modifier.height(16.dp))
-//
-//                // 加入输入框
-//                OutlinedTextField(
-//                    value = joinCodeInput,
-//                    onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) joinCodeInput = it },
-//                    label = { Text("输入4位邀请码", color = Color.Gray) },
-//                    modifier = Modifier.fillMaxWidth(),
-//                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-//                    singleLine = true,
-//                    colors = OutlinedTextFieldDefaults.colors(
-//                        focusedTextColor = Color.White,
-//                        unfocusedTextColor = Color.White,
-//                        focusedBorderColor = Color.White,
-//                        unfocusedBorderColor = Color.DarkGray
-//                    )
-//                )
-//
-//                Spacer(Modifier.height(12.dp))
-//
-//                Button(
-//                    onClick = { if (joinCodeInput.length == 4) viewModel.partyManager.joinParty(joinCodeInput) },
-//                    enabled = joinCodeInput.length == 4,
-//                    modifier = Modifier.fillMaxWidth(),
-//                    shape = RoundedCornerShape(12.dp)
-//                ) {
-//                    Text("加入小队")
-//                }
-//            }
-//            is PartyState.Joined -> {
-//                // 已加入状态：显示邀请码和成员
-//                Text("小队邀请码", color = Color.Gray, fontSize = 12.sp)
-//                Row(
-//                    verticalAlignment = Alignment.CenterVertically,
-//                    horizontalArrangement = Arrangement.Center,
-//                    modifier = Modifier.clickable {
-//                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(s.code))
-//                        Toast.makeText(context, "邀请码已复制", Toast.LENGTH_SHORT).show()
-//                    }
-//                ) {
-//                    Text(s.code, color = Color.White, fontSize = 48.sp, fontWeight = FontWeight.Bold)
-//                    Spacer(Modifier.width(8.dp))
-//                    Icon(Icons.Default.ContentCopy, null, tint = Color.Gray, modifier = Modifier.size(20.dp))
-//                }
-//
-//                Spacer(Modifier.height(24.dp))
-//                Divider(color = Color.DarkGray)
-//                Spacer(Modifier.height(16.dp))
-//
-//                Text("在线成员 (${s.members.size + 1})", modifier = Modifier.align(Alignment.Start), color = Color.Gray, fontSize = 12.sp)
-//
-//                // 成员列表
-//                Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-//                    // 自己
-//                    MemberRow(name = "我 (自己)", avatar = null, isMe = true)
-//                    // 队友
-//                    s.members.forEach { member ->
-//                        MemberRow(name = member.userName ?: "雪友", avatar = member.avatarUrl, isMe = false)
-//                    }
-//                }
-//
-//                Spacer(Modifier.height(32.dp))
-//
-//                // 退出/结束按钮
-//                TextButton(
-//                    onClick = { viewModel.partyManager.leaveParty() },
-//                    modifier = Modifier.fillMaxWidth()
-//                ) {
-//                    Text(if (s.isHost) "结束并离开小队" else "退出当前小队", color = Color.Red)
-//                }
-//            }
-//        }
-//    }
-//}
-//@Composable
+fun PartySheetContent(
+    viewModel: RecordingViewModel,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    val partyState by viewModel.partyState.collectAsState()
+    var joinCodeInput by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        when (val s = partyState) {
+            is PartyState.Idle -> {
+                Text("尚未加入小队", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(24.dp))
+
+                // 创建按钮
+                Button(
+                    onClick = { viewModel.partyManager.createParty() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("创建新小队", color = Color.Black)
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Text("或", color = Color.Gray, fontSize = 12.sp)
+                Spacer(Modifier.height(16.dp))
+
+                // 加入输入框
+                OutlinedTextField(
+                    value = joinCodeInput,
+                    onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) joinCodeInput = it },
+                    label = { Text("输入4位邀请码", color = Color.Gray) },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color.White,
+                        unfocusedBorderColor = Color.DarkGray
+                    )
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                Button(
+                    onClick = { if (joinCodeInput.length == 4) viewModel.partyManager.joinParty(joinCodeInput) },
+                    enabled = joinCodeInput.length == 4,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("加入小队")
+                }
+            }
+            is PartyState.Joined -> {
+                // 已加入状态：显示邀请码和成员
+                Text("小队邀请码", color = Color.Gray, fontSize = 12.sp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.clickable {
+                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(s.code))
+                        Toast.makeText(context, "邀请码已复制", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text(s.code, color = Color.White, fontSize = 48.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(8.dp))
+                    Icon(Icons.Default.ContentCopy, null, tint = Color.Gray, modifier = Modifier.size(20.dp))
+                }
+
+                Spacer(Modifier.height(24.dp))
+                Divider(color = Color.DarkGray)
+                Spacer(Modifier.height(16.dp))
+
+                Text("在线成员 (${s.members.size + 1})", modifier = Modifier.align(Alignment.Start), color = Color.Gray, fontSize = 12.sp)
+
+                // 成员列表
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // 自己
+                    MemberRow(name = "我 (自己)", avatar = null, isMe = true)
+                    // 队友
+                    s.members.forEach { member ->
+                        MemberRow(name = member.userName ?: "雪友", avatar = member.avatarUrl, isMe = false)
+                    }
+                }
+
+                Spacer(Modifier.height(32.dp))
+
+                // 退出/结束按钮
+                TextButton(
+                    onClick = { viewModel.partyManager.leaveParty() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (s.isHost) "结束并离开小队" else "退出当前小队", color = Color.Red)
+                }
+            }
+        }
+    }
+}
+@Composable
 fun MemberRow(
     name: String,
     avatar: String?,
@@ -6792,6 +6776,7 @@ fun MemberRow(
         )
     }
 }
+
 
 ==================================================
 
@@ -7164,12 +7149,72 @@ class SystemLocationService(
 
 ==================================================
 
+File: app\src\main\java\com\gosnow\app\ui\record\party\PartyRepository.kt
+--------------------------------------------------
+package com.gosnow.app.ui.record.party
+
+import com.gosnow.app.datasupabase.SupabaseClientProvider
+import com.gosnow.app.ui.snowcircle.data.supabase.PartyInsert
+import com.gosnow.app.ui.snowcircle.data.supabase.PartyMemberInsert
+import com.gosnow.app.ui.snowcircle.data.supabase.PartyRow
+import io.github.jan.supabase.postgrest.from
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+object PartyRepository {
+    private val client get() = SupabaseClientProvider.supabaseClient
+
+    /**
+     * 1. 在 Party 表创建新队伍
+     * 2. 将创建者作为 host 加入 party_member 表
+     */
+    suspend fun createPartyInDb(hostId: String, code: String): String = withContext(Dispatchers.IO) {
+        // 插入 Party 表
+        val party = client.from("party")
+            .insert(PartyInsert(code = code, hostId = hostId)) { select() }
+            .decodeSingle<PartyRow>()
+
+        // 插入 Member 表 (自己是 Host)
+        joinPartyDb(party.id, hostId, "host")
+
+        return@withContext party.id
+    }
+
+    /**
+     * 根据 4 位验证码查找 Party ID
+     */
+    suspend fun findPartyIdByCode(code: String): String? = withContext(Dispatchers.IO) {
+        val result = client.from("party")
+            .select {
+                filter { eq("join_code", code) }
+                limit(1)
+            }
+            .decodeList<PartyRow>()
+        return@withContext result.firstOrNull()?.id
+    }
+
+    /**
+     * 将用户写入 party_member 表
+     */
+    suspend fun joinPartyDb(partyId: String, userId: String, role: String = "member") = withContext(Dispatchers.IO) {
+        // upsert 避免重复加入报错，依赖 onConflict 策略 (party_id, user_id)
+        client.from("party_member")
+            .upsert(
+                PartyMemberInsert(partyId = partyId, userId = userId, role = role),
+                onConflict = "party_id, user_id"
+            )
+    }
+}
+
+==================================================
+
 File: app\src\main\java\com\gosnow\app\ui\record\party\PartyRideManager.kt
 --------------------------------------------------
 package com.gosnow.app.ui.record.party
 
 import android.location.Location
 import android.util.Log
+import com.gosnow.app.datasupabase.CurrentUserStore
 import com.gosnow.app.datasupabase.SupabaseClientProvider
 import com.gosnow.app.ui.snowcircle.data.party.PartyUserRepository
 import com.gosnow.app.ui.snowcircle.model.PartyMember
@@ -7192,11 +7237,17 @@ class PartyRideManager(private val scope: CoroutineScope) {
 
     private var channel: RealtimeChannel? = null
     private var isConnecting = false
-    private var lastBroadcastTime = 0L
-    private val THROTTLE_MS = 1000L
+
+    // 心跳任务
+    private var heartbeatJob: Job? = null
+    private var lastKnownLocation: Pair<Double, Double>? = null
 
     // 本地缓存：userId -> Member
     private val memberCache = mutableMapOf<String, PartyMember>()
+
+    companion object {
+        private const val TAG = "PartyDebug"
+    }
 
     fun createParty() {
         val code = String.format("%04d", (0..9999).random())
@@ -7207,53 +7258,40 @@ class PartyRideManager(private val scope: CoroutineScope) {
         if (isConnecting) return
         val currentId = myUserId
         if (currentId.isEmpty()) {
-            scope.launch { _statusEvent.emit("未登录，无法加入") }
+            emitStatus("未登录，无法加入")
             return
         }
 
         isConnecting = true
         scope.launch {
             try {
-                Log.d("PartyDebug", "开始加入房间: $code")
-                _statusEvent.emit("正在连接...")
+                Log.d(TAG, "=== 开始加入流程: $code ===")
+                emitStatus(if (isCreating) "正在创建..." else "正在加入...")
 
-                // 1. 清理旧连接
-                channel?.let { runCatching { it.unsubscribe() } }
-                memberCache.clear()
-                // 重置 UI 状态
-                _state.value = PartyState.Joined(code, emptyList(), isHost = isCreating)
-
-                // 2. 创建频道
-                val ch = client.realtime.channel("room_$code")
-
-                // 3. 监听变化
-                scope.launch {
-                    ch.presenceChangeFlow().collect { action ->
-                        handlePresenceAction(action)
-                    }
+                // 1. 数据库操作
+                if (isCreating) {
+                    PartyRepository.createPartyInDb(currentId, code)
+                } else {
+                    val partyId = PartyRepository.findPartyIdByCode(code)
+                        ?: throw IllegalStateException("无效的邀请码")
+                    PartyRepository.joinPartyDb(partyId, currentId)
                 }
 
-                // 4. 订阅
-                withTimeout(15000L) { ch.subscribe() }
-                channel = ch
-                Log.d("PartyDebug", "订阅成功，准备广播初始状态")
+                // 2. 清理旧状态
+                cleanup()
 
-                // 5. ✅【核心修复】进房必须立即 track，否则别人看不见我
-                // 发送一个初始空位置 (0,0)，或者等待 LocationService 的第一次回调覆盖它
-                // 这里的关键是让 Supabase 知道 "我在线"
-                ch.track(buildJsonObject {
-                    put("u", currentId)
-                    put("lat", 0.0)
-                    put("lon", 0.0)
-                    put("init", true) // 标记这是初始包
-                })
+                // 3. 更新 UI
+                _state.value = PartyState.Joined(code, emptyList(), isHost = isCreating)
 
-                _statusEvent.emit("加入成功")
+                // 4. 连接 Realtime
+                connectRealtime(code, currentId)
+
+                emitStatus("加入成功，等待队友...")
 
             } catch (e: Exception) {
                 e.printStackTrace()
-                Log.e("PartyDebug", "加入失败: ${e.message}")
-                _statusEvent.emit("连接断开: ${e.message}")
+                Log.e(TAG, "加入失败: ${e.message}")
+                emitStatus("操作失败: ${e.message}")
                 _state.value = PartyState.Idle
             } finally {
                 isConnecting = false
@@ -7261,105 +7299,185 @@ class PartyRideManager(private val scope: CoroutineScope) {
         }
     }
 
-    fun onMyLocationUpdate(location: Location) {
-        val activeChannel = channel ?: return
-        // 只有加入了才发
-        if (_state.value !is PartyState.Joined) return
+    private suspend fun connectRealtime(code: String, myId: String) {
+        val ch = client.realtime.channel("room_$code")
+        channel = ch
 
-        val now = System.currentTimeMillis()
-        if (now - lastBroadcastTime > THROTTLE_MS) {
-            lastBroadcastTime = now
-            scope.launch(Dispatchers.IO) {
-                try {
-                    // 广播最新位置
-                    activeChannel.track(buildJsonObject {
-                        put("u", myUserId)
-                        put("lat", location.latitude)
-                        put("lon", location.longitude)
-                    })
-                } catch (e: Exception) {
-                    Log.e("PartyDebug", "位置广播失败: ${e.message}")
-                }
+        // A. 监听队友状态变化
+        scope.launch {
+            ch.presenceChangeFlow().collect { action ->
+                handlePresenceAction(action)
+            }
+        }
+
+        // B. 监听连接状态
+        scope.launch {
+            ch.status.collect { status ->
+                Log.d(TAG, "通道状态变更: $status")
+            }
+        }
+
+        // C. 订阅并等待连接成功
+        Log.d(TAG, "正在订阅通道...")
+        ch.subscribe()
+
+        try {
+            // 阻塞等待直到状态变为 SUBSCRIBED
+            withTimeout(10000L) {
+                ch.status.filter { it == RealtimeChannel.Status.SUBSCRIBED }.first()
+            }
+            Log.d(TAG, "通道已连接 (SUBSCRIBED)，开始发送心跳")
+
+            // D. 连接成功后，立即启动心跳广播
+            startHeartbeat(myId)
+
+        } catch (e: TimeoutCancellationException) {
+            Log.e(TAG, "连接超时！Realtime 可能未开启或网络受限")
+            emitStatus("连接超时，请重试")
+        }
+    }
+
+    private fun startHeartbeat(myId: String) {
+        heartbeatJob?.cancel()
+        heartbeatJob = scope.launch {
+            Log.d(TAG, "心跳任务启动")
+            // 立即发第一次
+            val (lat, lon) = lastKnownLocation ?: (0.0 to 0.0)
+            broadcastLocation(myId, lat, lon, isInit = true)
+
+            while (isActive) {
+                delay(3000) // 每3秒一次
+                val (currLat, currLon) = lastKnownLocation ?: (0.0 to 0.0)
+                broadcastLocation(myId, currLat, currLon)
             }
         }
     }
 
+    fun onMyLocationUpdate(location: Location) {
+        val myId = myUserId
+        if (_state.value !is PartyState.Joined || myId.isEmpty()) return
+
+        lastKnownLocation = location.latitude to location.longitude
+
+        // 有位置移动时，立即广播
+        scope.launch(Dispatchers.IO) {
+            broadcastLocation(myId, location.latitude, location.longitude)
+        }
+    }
+
+    // ✅ 这就是你报错缺失的函数
+    private suspend fun broadcastLocation(userId: String, lat: Double, lon: Double, isInit: Boolean = false) {
+        val activeChannel = channel ?: return
+
+        if (activeChannel.status.value != RealtimeChannel.Status.SUBSCRIBED) {
+            return
+        }
+
+        val profile = CurrentUserStore.profile.value
+        val name = profile?.userName ?: "雪友${userId.take(4)}"
+        val avatar = profile?.avatarUrl ?: ""
+
+        try {
+            activeChannel.track(buildJsonObject {
+                put("u", userId)
+                put("lat", lat)
+                put("lon", lon)
+                put("n", name)
+                put("a", avatar)
+                if (isInit) put("init", true)
+                put("ts", System.currentTimeMillis())
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "广播失败: ${e.message}")
+        }
+    }
+
+    // =========================================================
+    // ✅ 核心修复：防止加入后立马退出的逻辑
+    // =========================================================
     private suspend fun handlePresenceAction(action: PresenceAction) {
-        Log.d("PartyDebug", "收到 Presence 事件: joins=${action.joins.size}, leaves=${action.leaves.size}")
+        val myId = myUserId
 
-        // A. 处理加入/更新 (Supabase 会把“已在房间的人”也通过 Joins 发过来)
+        Log.d(TAG, "收到 Presence 事件! Joins: ${action.joins.size}, Leaves: ${action.leaves.size}")
+
+        // 1. 先收集这一波 "Joins" (正在更新/加入) 的所有用户 ID
+        val joiningUserIds = mutableSetOf<String>()
+
         action.joins.values.forEach { presence ->
-            try {
-                // 安全解析 JSON
-                val json = presence.state.jsonObject
-
-                // 兼容不同 key 写法，防止解析失败
-                val userId = json["u"]?.jsonPrimitive?.content
-                    ?: json["userId"]?.jsonPrimitive?.content
-
-                Log.d("PartyDebug", "解析到用户: $userId")
-
-                if (userId != null && userId != myUserId) {
-                    val lat = json["lat"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                    val lon = json["lon"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-
-                    // 查用户信息 (加 try-catch 兜底，防止网络请求失败导致此人不显示)
-                    var user = try {
-                        PartyUserRepository.getUserInfo(userId)
-                    } catch (e: Exception) {
-                        null
-                    }
-
-                    // 即使没查到 UserInfo，也要先把人显示出来
-                    val name = user?.displayName ?: "队友 ${userId.take(4)}"
-
-                    memberCache[userId] = PartyMember(
-                        userId = userId,
-                        lat = lat,
-                        lon = lon,
-                        avatarUrl = user?.avatarUrl,
-                        userName = name
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e("PartyDebug", "解析队友数据出错: ${e.message}")
+            val userId = parseAndCachePresence(presence, myId)
+            if (userId != null) {
+                joiningUserIds.add(userId)
             }
         }
 
-        // B. 处理离开
+        // 2. 处理离开
         action.leaves.values.forEach { presence ->
             try {
                 val json = presence.state.jsonObject
                 val userId = json["u"]?.jsonPrimitive?.content
-                if (userId != null) {
-                    Log.d("PartyDebug", "用户离开: $userId")
+                    ?: json["userId"]?.jsonPrimitive?.content
+
+                // ✅ 只有当这个 userId 不在 joiningUserIds 集合里时，才说明是真的退出了
+                if (userId != null && !joiningUserIds.contains(userId)) {
+                    Log.d(TAG, "用户彻底离开: $userId")
                     memberCache.remove(userId)
                 }
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
 
-        // C. 刷新 UI
+        // 3. 刷新 UI
+        val newList = memberCache.values.toList()
+        Log.d(TAG, "刷新 UI 列表，当前队友数: ${newList.size}")
+
         _state.update { s ->
-            if (s is PartyState.Joined) {
-                val list = memberCache.values.toList()
-                Log.d("PartyDebug", "刷新 UI 列表，当前人数: ${list.size}")
-                s.copy(members = list)
-            } else {
-                s
-            }
+            if (s is PartyState.Joined) s.copy(members = newList) else s
+        }
+    }
+
+    private fun parseAndCachePresence(presence: Presence, myId: String): String? {
+        try {
+            val json = presence.state.jsonObject
+            val userId = json["u"]?.jsonPrimitive?.content
+                ?: json["userId"]?.jsonPrimitive?.content
+
+            if (userId == null) return null
+            if (userId == myId) return userId // 返回自己的ID但不存缓存
+
+            val lat = json["lat"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+            val lon = json["lon"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+            val name = json["n"]?.jsonPrimitive?.content ?: "队友"
+            val avatar = json["a"]?.jsonPrimitive?.content
+
+            val member = PartyMember(userId, lat, lon, avatar, name)
+            memberCache[userId] = member
+
+            return userId
+        } catch (e: Exception) {
+            Log.e(TAG, "解析 Presence JSON 出错: ${e.message}")
+            return null
         }
     }
 
     fun leaveParty() {
         scope.launch {
-            try {
-                channel?.unsubscribe()
-            } catch (e: Exception) {}
-            channel = null
-            memberCache.clear()
+            cleanup()
             _state.value = PartyState.Idle
-            _statusEvent.emit("已离开")
+            emitStatus("已离开")
         }
+    }
+
+    private suspend fun cleanup() {
+        heartbeatJob?.cancel()
+        try { channel?.unsubscribe() } catch (_: Exception) {}
+        channel = null
+        memberCache.clear()
+        lastKnownLocation = null
+    }
+
+    private fun emitStatus(msg: String) {
+        scope.launch { _statusEvent.emit(msg) }
     }
 }
 
@@ -9183,6 +9301,48 @@ interface PostRepository {
     suspend fun createPost(content: String, resortName: String?, images: List<String>, currentUser: User): Post
 }
 
+
+==================================================
+
+File: app\src\main\java\com\gosnow\app\ui\snowcircle\data\supabase\SupabasePartyDtos.kt
+--------------------------------------------------
+package com.gosnow.app.ui.snowcircle.data.supabase
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+/**
+ * 对应数据库表 public.party
+ * 假设表结构为: id(uuid), code(text), host_id(uuid)
+ */
+@Serializable
+data class PartyRow(
+    val id: String,
+
+    @SerialName("join_code") val code: String,
+    @SerialName("host_id") val hostId: String
+)
+
+/**
+ * 用于向 public.party 插入数据
+ */
+@Serializable
+data class PartyInsert(
+
+    @SerialName("join_code") val code: String,
+    @SerialName("host_id") val hostId: String
+)
+
+/**
+ * 对应数据库表 public.party_member (根据你的截图定义)
+ * 字段: party_id, user_id, role
+ */
+@Serializable
+data class PartyMemberInsert(
+    @SerialName("party_id") val partyId: String,
+    @SerialName("user_id") val userId: String,
+    val role: String = "member"
+)
 
 ==================================================
 

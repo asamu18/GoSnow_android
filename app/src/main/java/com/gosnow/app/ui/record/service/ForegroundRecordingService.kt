@@ -107,13 +107,28 @@ class ForegroundRecordingService : Service() {
         }
     }
 
-    override fun onBind(intent: Intent?): IBinder = binder
+    // 2. ✅ 新增: 绑定时立即开启定位 (为了地图预览和队友位置)
+    override fun onBind(intent: Intent?): IBinder {
+        // 绑定时开启定位采样（不开启录制状态）
+        locationService.start()
+        return binder
+    }
 
+    // 3. ✅ 新增: 解绑时，如果不在录制中，则停止定位以省电
+    override fun onUnbind(intent: Intent?): Boolean {
+        if (!_state.value.isRecording) {
+            locationService.stop()
+            barometer?.stop()
+        }
+        return super.onUnbind(intent)
+    }
+    // ✅ 核心修复：必须重写 onStartCommand 来接收 ViewModel 发来的指令
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> startRecording()
+            ACTION_START -> startRecording() // 👈 这里调用了 startRecording，它就不再是灰色的了
             ACTION_STOP -> stopRecording()
         }
+        // START_STICKY 表示如果服务被意外杀死，系统会尝试重启它（这对录制服务很重要）
         return START_STICKY
     }
 
